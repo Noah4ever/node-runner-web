@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom'
+import exportVideo from '../assets/export.mp4'
+import importVideo from '../assets/import.mp4'
 
 export function HomePage() {
     return (
@@ -27,6 +29,26 @@ export function HomePage() {
                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                         Browse shared trees
                     </Link>
+                </div>
+            </section>
+
+            {/* Video showcase */}
+            <section className="pb-24" style={{ perspective: '1200px' }}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 items-center">
+                    <div
+                        className="overflow-hidden rounded-lg border border-[var(--color-border)] shadow-2xl"
+                        style={{ transform: 'rotateY(6deg) rotateX(2deg)', transformStyle: 'preserve-3d' }}
+                    >
+                        <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide text-center py-2 bg-[var(--color-surface)]">Export</p>
+                        <video src={exportVideo} autoPlay loop muted playsInline className="w-full block" />
+                    </div>
+                    <div
+                        className="overflow-hidden rounded-lg border border-[var(--color-border)] shadow-2xl"
+                        style={{ transform: 'rotateY(-6deg) rotateX(2deg)', transformStyle: 'preserve-3d' }}
+                    >
+                        <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide text-center py-2 bg-[var(--color-surface)]">Import</p>
+                        <video src={importVideo} autoPlay loop muted playsInline className="w-full block" />
+                    </div>
                 </div>
             </section>
 

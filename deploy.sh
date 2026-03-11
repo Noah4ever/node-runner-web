@@ -4,7 +4,7 @@ set -euo pipefail
 # Configuration 
 APP_NAME="node-runner"
 DOMAIN="node-runner.thiering.org"
-SERVER="root@thiering.org"
+SERVER="root@89.58.39.82"
 DEPLOY_DIR="/srv/node-runner"
 API_PORT=7999
 BRANCH="main"
@@ -38,33 +38,33 @@ pnpm build
 # Deploy 
 info "Deploying to ${SERVER}:${DEPLOY_DIR}..."
 
-# Create directory structure on server
-ssh "$SERVER" "mkdir -p ${DEPLOY_DIR}/{api,web}"
+# Create directory structure on server (matches pnpm-workspace.yaml: apps/*, packages/*)
+ssh "$SERVER" "mkdir -p ${DEPLOY_DIR}/apps/{api,web} ${DEPLOY_DIR}/packages/{shared,schemas,node-runner-core,config,ui}"
 
-# Sync web static files
+# Sync web static files (include package.json so pnpm workspace recognizes it)
 info "Uploading frontend..."
-rsync -avz --delete apps/web/dist/ "${SERVER}:${DEPLOY_DIR}/web/"
+rsync -avz --delete apps/web/dist/ apps/web/package.json "${SERVER}:${DEPLOY_DIR}/apps/web/"
 
 # Sync API code
 info "Uploading API..."
-rsync -avz --delete \
+rsync -avz --delete --exclude='.env' --exclude='data' \
     apps/api/dist/ \
     apps/api/package.json \
-    "${SERVER}:${DEPLOY_DIR}/api/"
+    "${SERVER}:${DEPLOY_DIR}/apps/api/"
 
 # Sync workspace packages that the API needs at runtime
 info "Uploading shared packages..."
-ssh "$SERVER" "mkdir -p ${DEPLOY_DIR}/packages/{shared,schemas,core,config}"
+ssh "$SERVER" "mkdir -p ${DEPLOY_DIR}/packages/{shared,schemas,node-runner-core,config,ui}"
 
-for pkg in shared schemas core config; do
+for pkg in shared schemas node-runner-core config ui; do
     if [[ -d "packages/${pkg}/dist" ]]; then
         rsync -avz --delete \
-            "packages/${pkg}/dist/" \
+            "packages/${pkg}/dist" \
             "packages/${pkg}/package.json" \
             "${SERVER}:${DEPLOY_DIR}/packages/${pkg}/"
     elif [[ -d "packages/${pkg}/src" ]]; then
         rsync -avz --delete \
-            "packages/${pkg}/src/" \
+            "packages/${pkg}/src" \
             "packages/${pkg}/package.json" \
             "packages/${pkg}/tsconfig.json" \
             "${SERVER}:${DEPLOY_DIR}/packages/${pkg}/"
@@ -82,6 +82,7 @@ rsync -avz \
 info "Installing production dependencies and restarting..."
 ssh "$SERVER" bash <<'REMOTE'
 set -euo pipefail
+export PATH="$HOME/.local/share/pnpm:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node/ 2>/dev/null | tail -1)/bin:/usr/local/bin:$PATH"
 cd /srv/node-runner
 
 # Install production deps only
