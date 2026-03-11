@@ -33,18 +33,18 @@ export function HomePage() {
             </section>
 
             {/* Video showcase */}
-            <section className="pb-24" style={{ perspective: '1200px' }}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 items-center">
+            <section className="pb-24 mx-auto max-w-3xl" style={{ perspective: '1200px' }}>
+                <div className="flex flex-col gap-10">
                     <div
                         className="overflow-hidden rounded-lg border border-[var(--color-border)] shadow-2xl"
-                        style={{ transform: 'rotateY(6deg) rotateX(2deg)', transformStyle: 'preserve-3d' }}
+                        style={{ transform: 'rotateY(3deg) rotateX(2deg)', transformStyle: 'preserve-3d' }}
                     >
                         <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide text-center py-2 bg-[var(--color-surface)]">Export</p>
                         <video src={exportVideo} autoPlay loop muted playsInline className="w-full block" />
                     </div>
                     <div
                         className="overflow-hidden rounded-lg border border-[var(--color-border)] shadow-2xl"
-                        style={{ transform: 'rotateY(-6deg) rotateX(2deg)', transformStyle: 'preserve-3d' }}
+                        style={{ transform: 'rotateY(-3deg) rotateX(2deg)', transformStyle: 'preserve-3d' }}
                     >
                         <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide text-center py-2 bg-[var(--color-surface)]">Import</p>
                         <video src={importVideo} autoPlay loop muted playsInline className="w-full block" />
