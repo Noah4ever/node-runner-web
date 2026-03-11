@@ -212,7 +212,7 @@ export function SharedPage() {
                             </div>
                             <div className="flex justify-between">
                                 <dt className="text-[var(--color-text-muted)]">Date</dt>
-                                <dd>{(() => { const d = new Date(page.createdAt); return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}` })()}</dd>
+                                <dd>{(() => { const d = new Date(page.createdAt); return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}` })()}</dd>
                             </div>
                             <div className="flex justify-between">
                                 <dt className="text-[var(--color-text-muted)]">Nodes</dt>

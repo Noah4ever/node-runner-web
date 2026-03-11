@@ -53,7 +53,7 @@ export function UserProfilePage() {
     }
 
     const userName = userInfo?.name ?? items[0]?.authorName ?? 'User'
-    const joinDate = userInfo?.createdAt ? new Date(userInfo.createdAt).toLocaleDateString() : null
+    const joinDate = userInfo?.createdAt ? (() => { const d = new Date(userInfo.createdAt); return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}` })() : null
 
     return (
         <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-12">

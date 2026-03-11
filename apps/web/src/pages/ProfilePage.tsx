@@ -333,7 +333,7 @@ export function ProfilePage() {
                                                     {item.title}
                                                 </h3>
                                                 <p className="mt-0.5 text-xs text-[var(--color-text-faint)]">
-                                                    {item.nodeCount} nodes · {item.linkCount} links · {new Date(item.createdAt).toLocaleDateString()}
+                                                    {item.nodeCount} nodes · {item.linkCount} links · {(() => { const d = new Date(item.createdAt); return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}` })()}
                                                 </p>
                                             </Link>
                                             <div className="mt-2 flex items-center gap-2">
