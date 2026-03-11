@@ -50,6 +50,17 @@ export function HomePage() {
                         <video src={importVideo} autoPlay loop muted playsInline className="w-full block" />
                     </div>
                 </div>
+                <div className="mt-8 text-center">
+                    <a
+                        href="https://extensions.blender.org/add-ons/node-runner/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-md bg-[var(--color-accent)] px-6 py-3 text-base font-semibold text-black transition-colors hover:bg-[var(--color-accent-hover)]"
+                    >
+                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.51 2.59c-.41-.24-.91-.24-1.32 0L2.19 7.41c-.41.24-.66.68-.66 1.15v6.88c0 .47.25.91.66 1.15l9 5.22c.41.24.91.24 1.32 0l9-5.22c.41-.24.66-.68.66-1.15V8.56c0-.47-.25-.91-.66-1.15l-9-4.82zM12 4.67l7.33 4.25L12 13.17 4.67 8.92 12 4.67z" /></svg>
+                        Get the Blender Addon
+                    </a>
+                </div>
             </section>
 
             {/* How it works — 3 steps */}
