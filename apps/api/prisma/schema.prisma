@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatarUrl String?  @map("avatar_url")
+  provider  String   // "google" | "github"
+  providerId String  @map("provider_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  pages     SharedNodePage[]
+  likes     Like[]
+  bookmarks Bookmark[]
+
+  @@unique([provider, providerId])
+  @@map("users")
+}
+
+model SharedNodePage {
+  id                String   @id @default(cuid())
+  slug              String   @unique
+  title             String   @db.VarChar(120)
+  description       String   @default("") @db.VarChar(1000)
+  sourceFormat      String   @map("source_format")
+  originalContent   String   @map("original_content")
+  normalizedContent String?  @map("normalized_content")
+  metadata          Json     @default("{}")
+  isPublic          Boolean  @default(false) @map("is_public")
+  previewColor      String?  @map("preview_color")
+  tags              String[] @default([])
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  authorId String? @map("author_id")
+  author   User?   @relation(fields: [authorId], references: [id])
+
+  likes     Like[]
+  bookmarks Bookmark[]
+
+  @@index([authorId])
+  @@index([isPublic, createdAt])
+  @@map("shared_node_pages")
+}
+
+model Like {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  pageId String @map("page_id")
+
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  page SharedNodePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pageId])
+  @@map("likes")
+}
+
+model Bookmark {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  pageId String @map("page_id")
+
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  page SharedNodePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pageId])
+  @@map("bookmarks")
+}

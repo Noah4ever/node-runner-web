@@ -1,0 +1,9 @@
+{
+    "name": "@node-runner/config",
+    "version": "0.0.0",
+    "private": true,
+    "files": [
+        "*.json",
+        "eslint.config.mjs"
+    ]
+}
