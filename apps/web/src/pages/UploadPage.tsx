@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useNodeStore, useAuthStore } from '@/stores/nodeStore'
 import { useInspect, useValidate, useCreateShare, useAuth } from '@/hooks/useApi'
 import { api } from '@/lib/api'
@@ -32,13 +32,33 @@ export function UploadPage() {
 
     const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-    // If rawInput was set from homepage, auto-inspect on mount
+    const [searchParams, setSearchParams] = useSearchParams()
+    const autoAdvance = searchParams.get('startAt') === 'details'
+    const autoAdvancedRef = useRef(false)
+
+    // If rawInput was set from another page, auto-inspect on mount
     useEffect(() => {
         if (rawInput) {
             setInput(rawInput)
             triggerLivePreview(rawInput)
         }
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // When called from /convert or /viewer with ?startAt=details, advance once
+    // the live preview confirms the input is valid. We do it after validation
+    // (not synchronously) so we never advance with un-parseable content.
+    useEffect(() => {
+        if (!autoAdvance || autoAdvancedRef.current) return
+        if (step !== 'paste') return
+        if (livePreview && Object.keys(livePreview.nodes).length > 0) {
+            autoAdvancedRef.current = true
+            handleContinue()
+            // Drop the query so back-navigating doesn't re-advance
+            const next = new URLSearchParams(searchParams)
+            next.delete('startAt')
+            setSearchParams(next, { replace: true })
+        }
+    }, [autoAdvance, step, livePreview]) // eslint-disable-line react-hooks/exhaustive-deps
 
     // Live preview: debounce inspect as user types/pastes
     const triggerLivePreview = useCallback((value: string) => {
@@ -161,20 +181,22 @@ export function UploadPage() {
 
     return (
         <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-12">
-            {/* Step indicator — clickable to go back */}
-            <div className="mb-10 flex items-center justify-center gap-2">
+            {/* Step indicator - clickable to go back */}
+            <nav aria-label="Upload progress" className="mb-10 flex items-center justify-center gap-2">
                 {STEPS.map((s, i) => {
                     const isActive = s === step
                     const isDone = i < stepIndex
                     const isClickable = isDone
                     return (
                         <div key={s} className="flex items-center gap-2">
-                            {i > 0 && <div className={`h-px w-8 ${isDone || isActive ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-border)]'}`} />}
+                            {i > 0 && <div aria-hidden="true" className={`h-px w-8 ${isDone || isActive ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-border)]'}`} />}
                             <button
                                 type="button"
                                 onClick={() => handleStepClick(s, i)}
                                 disabled={!isClickable}
-                                className={`flex items-center gap-2 ${isClickable ? 'cursor-pointer' : 'cursor-default'}`}
+                                aria-current={isActive ? 'step' : undefined}
+                                aria-label={`Step ${i + 1}: ${STEP_LABELS[i]}${isDone ? ' (completed)' : isActive ? ' (current)' : ''}`}
+                                className={`flex items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${isClickable ? 'cursor-pointer' : 'cursor-default'}`}
                             >
                                 <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors ${isActive ? 'bg-[var(--color-accent)] text-black' :
                                     isDone ? 'bg-[var(--color-accent)] text-black opacity-60 hover:opacity-80' :
@@ -189,7 +211,7 @@ export function UploadPage() {
                         </div>
                     )
                 })}
-            </div>
+            </nav>
 
             {/* Step 1: Paste */}
             {step === 'paste' && (
@@ -210,7 +232,7 @@ export function UploadPage() {
                     <div className="mt-6 space-y-6">
                         {/* Input */}
                         <div>
-                            {/* Paste from clipboard — above textarea */}
+                            {/* Paste from clipboard - above textarea */}
                             <button
                                 onClick={handlePasteFromClipboard}
                                 className="mb-3 inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-text-faint)] hover:text-[var(--color-text)] cursor-pointer"
@@ -218,7 +240,9 @@ export function UploadPage() {
                                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                                 Paste from clipboard
                             </button>
+                            <label htmlFor="node-input" className="sr-only">Node tree data</label>
                             <textarea
+                                id="node-input"
                                 ref={textareaRef}
                                 value={input}
                                 onChange={(e) => handleInputChange(e.target.value)}
@@ -229,13 +253,15 @@ export function UploadPage() {
                                     }, 50)
                                 }}
                                 placeholder="Paste node tree data here..."
-                                className="h-64 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 font-mono text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)] focus:outline-none resize-none"
+                                aria-describedby="node-input-status"
+                                spellCheck={false}
+                                className="h-64 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 font-mono text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)] resize-none"
                                 autoFocus
                             />
 
                             {/* Live stats */}
                             {hasInput && liveFormat && (
-                                <div className="mt-3 flex flex-wrap gap-3">
+                                <div id="node-input-status" aria-live="polite" className="mt-3 flex flex-wrap gap-3">
                                     <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
                                         <span className="text-xs text-[var(--color-text-faint)]">Format: </span>
                                         <span className="text-xs font-semibold">{liveFormat.toUpperCase().replace('_', ' ')}</span>
@@ -266,7 +292,7 @@ export function UploadPage() {
                                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
                                 </button>
                                 {hasInput && !liveIsValid && liveFormat && (
-                                    <p className="mt-2 text-xs text-red-400">Could not parse any nodes. Check the format and try again.</p>
+                                    <p role="alert" className="mt-2 text-xs text-red-400">Could not parse any nodes. Check the format and try again.</p>
                                 )}
                             </div>
                         </div>
@@ -391,7 +417,7 @@ export function UploadPage() {
                         </button>
                     </div>
                     {shareMutation.isError && (
-                        <p className="mt-3 text-sm text-red-400">{(shareMutation.error as Error)?.message || 'Publishing failed. Please try again.'}</p>
+                        <p role="alert" className="mt-3 text-sm text-red-400">{(shareMutation.error as Error)?.message || 'Publishing failed. Please try again.'}</p>
                     )}
                 </div>
             )}

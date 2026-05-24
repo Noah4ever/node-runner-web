@@ -4,7 +4,8 @@ import { useGetShare, useToggleLike, useToggleSave, useDeleteShare, useToggleBan
 import { useAuthStore } from '@/stores/nodeStore'
 import { NodeGraph } from '@/components/NodeGraph'
 import { UserAvatar } from '@/components/UserAvatar'
-import type { NodeTree } from '@node-runner/shared'
+import { InlineConvert } from '@/components/InlineConvert'
+import type { NodeTree, NodeFormat } from '@node-runner/shared'
 
 interface ShareData {
     id: string
@@ -40,6 +41,7 @@ export function SharedPage() {
     const navigate = useNavigate()
     const [copiedData, setCopiedData] = useState(false)
     const [copiedLink, setCopiedLink] = useState(false)
+    const [copiedImport, setCopiedImport] = useState(false)
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
     const [graphFullscreen, setGraphFullscreen] = useState(false)
 
@@ -93,6 +95,14 @@ export function SharedPage() {
         navigator.clipboard.writeText(window.location.href)
         setCopiedLink(true)
         setTimeout(() => setCopiedLink(false), 1500)
+    }
+
+    function handleCopyImport() {
+        if (!page) return
+        const url = `${window.location.origin}/share/${page.slug}/import`
+        navigator.clipboard.writeText(url)
+        setCopiedImport(true)
+        setTimeout(() => setCopiedImport(false), 1500)
     }
 
     function handleLike() {
@@ -169,6 +179,9 @@ export function SharedPage() {
                             <p className="text-sm text-[var(--color-text-muted)]">{page.description}</p>
                         </div>
                     )}
+
+                    {/* Inline convert - let visitors get the same tree in another format */}
+                    <InlineConvert content={page.content} sourceFormat={page.format as NodeFormat} />
 
                     {/* Node Data / JSON Viewer */}
                     <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
@@ -286,6 +299,30 @@ export function SharedPage() {
                             )}
                         </button>
                     </div>
+
+                    {/* Import URL - raw content for the Blender add-on / curl */}
+                    {/* <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                        <h3 className="mb-2 text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">Import URL</h3>
+                        <p className="mb-2.5 text-xs text-[var(--color-text-muted)]">
+                            Direct link to the raw node setup. Paste into the Blender add-on to import.
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                            <code className="flex-1 truncate rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 font-mono text-[11px] text-[var(--color-text-muted)]">
+                                /share/{page.slug}/import
+                            </code>
+                            <button
+                                onClick={handleCopyImport}
+                                className={`shrink-0 inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs transition-colors cursor-pointer ${copiedImport ? 'border-green-500/40 text-green-400' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}
+                                title="Copy import URL"
+                            >
+                                {copiedImport ? (
+                                    <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>
+                                ) : (
+                                    <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>Copy</>
+                                )}
+                            </button>
+                        </div>
+                    </div> */}
 
                     {/* Admin controls */}
                     {currentUser?.isAdmin && (

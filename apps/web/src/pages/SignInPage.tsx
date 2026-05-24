@@ -175,11 +175,11 @@ export function SignInPage() {
                 <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-2">
                     {hasOAuth && (
                         <p className="text-xs text-[var(--color-text-faint)] leading-relaxed">
-                            <strong className="text-[var(--color-text-muted)]">Google / GitHub</strong> — your account works across devices and browsers.
+                            <strong className="text-[var(--color-text-muted)]">Google / GitHub</strong> - your account works across devices and browsers.
                         </p>
                     )}
                     <p className="text-xs text-[var(--color-text-faint)] leading-relaxed">
-                        <strong className="text-[var(--color-text-muted)]">Username only</strong> — quick and easy, but tied to this browser. No cross-device access.
+                        <strong className="text-[var(--color-text-muted)]">Username only</strong> - quick and easy, but tied to this browser. No cross-device access.
                     </p>
                 </div>
             </div>

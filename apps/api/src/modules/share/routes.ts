@@ -94,7 +94,7 @@ export const shareRoutes: FastifyPluginAsync = async (app) => {
         tree = parsed
       }
     } catch {
-      // Still allow upload even if parsing fails — store raw content
+      // Still allow upload even if parsing fails - store raw content
       metadata = {
         nodeCount: 0,
         linkCount: 0,
@@ -215,6 +215,33 @@ export const shareRoutes: FastifyPluginAsync = async (app) => {
       }))
 
     return ok(reply, userPages)
+  })
+
+  // Raw export - returns the original content as plain text.
+  // Stable public endpoint intended for the Blender addon and `curl`-style imports.
+  app.get('/share/:id/raw', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const record = shareStore.get(id)
+
+    if (!record || !record.isPublic) {
+      return fail(reply, 'NOT_FOUND', 'Shared page not found', 404)
+    }
+
+    const content = record.content as string
+    const format = record.format as string
+    const contentType =
+      format === 'json' || format === 'ai_json'
+        ? 'application/json; charset=utf-8'
+        : format === 'xml'
+          ? 'application/xml; charset=utf-8'
+          : 'text/plain; charset=utf-8'
+
+    reply
+      .header('Content-Type', contentType)
+      .header('X-Node-Runner-Format', format)
+      .header('X-Node-Runner-Slug', record.slug as string)
+      .header('Cache-Control', 'public, max-age=60')
+    return reply.send(content)
   })
 
   // Get a shared page
@@ -354,7 +381,7 @@ export const shareRoutes: FastifyPluginAsync = async (app) => {
     return ok(reply, record)
   })
 
-  // Toggle like (no login required — uses IP or userId)
+  // Toggle like (no login required - uses IP or userId)
   app.post('/share/:id/like', async (request, reply) => {
     const { id } = request.params as { id: string }
     if (!shareStore.has(id)) {

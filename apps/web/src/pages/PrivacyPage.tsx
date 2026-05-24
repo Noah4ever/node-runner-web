@@ -29,12 +29,12 @@ export function PrivacyPage() {
 
                 <section>
                     <h2 className="text-lg font-semibold text-[var(--color-text)]">3. Third-Party Services</h2>
-                    <p className="mt-2">If you sign in with Google or GitHub, your authentication is handled by those providers under their respective privacy policies. We only receive the profile data listed above — we do not access your repositories, files, or other account data.</p>
+                    <p className="mt-2">If you sign in with Google or GitHub, your authentication is handled by those providers under their respective privacy policies. We only receive the profile data listed above - we do not access your repositories, files, or other account data.</p>
                 </section>
 
                 <section>
                     <h2 className="text-lg font-semibold text-[var(--color-text)]">4. Data Storage</h2>
-                    <p className="mt-2">Your data is stored on our server. Uploaded content marked as public is visible to anyone. We do not use cookies — authentication is handled via a session token stored in your browser's local storage.</p>
+                    <p className="mt-2">Your data is stored on our server. Uploaded content marked as public is visible to anyone. We do not use cookies - authentication is handled via a session token stored in your browser's local storage.</p>
                 </section>
 
                 <section>

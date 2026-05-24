@@ -53,7 +53,7 @@ export const diffRequestSchema = z.object({
     rightFormat: nodeFormatSchema.optional(),
 })
 
-// Share — strict limits per requirements
+// Share - strict limits per requirements
 export const createShareRequestSchema = z.object({
     title: z.string().min(1).max(120).transform(s => s.trim()),
     description: z.string().max(1000).default('').transform(s => s.trim()),

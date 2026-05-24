@@ -9,3 +9,8 @@ coverage
 .next
 prisma/*.db
 data/
+package-lock.json
+
+# Python converter vendor copy (recreated from ../../node_runner/ at runtime)
+apps/api/python/vendor/
+__pycache__/

@@ -34,7 +34,7 @@ RULES:
 - Node names in the "nodes" dict must match exactly what you use in links.
 - For ShaderNodeMath with multiple "Value" inputs, disambiguate as "Value" (first), "Value 1" (second), "Value 2" (third).
 - "tree_type" should be "ShaderNodeTree" for materials or "CompositorNodeTree" for compositing.
-- Do not include "blender_version" or "export_name" — those are added automatically.
+- Do not include "blender_version" or "export_name" - those are added automatically.
 - color_ramp goes under "settings", not "inputs". Format:
   "settings": {"color_ramp": {"interpolation": "LINEAR", "elements": [{"position": 0.0, "color": [R,G,B,1]}, ...]}}
 
@@ -100,7 +100,7 @@ export function DocsPage() {
                             {
                                 step: '2',
                                 title: 'Export your nodes',
-                                desc: 'Select nodes in Blender, right-click > Node Runner > Export. Pick a name and format — the data is copied to your clipboard.',
+                                desc: 'Select nodes in Blender, right-click > Node Runner > Export. Pick a name and format - the data is copied to your clipboard.',
                             },
                             {
                                 step: '3',

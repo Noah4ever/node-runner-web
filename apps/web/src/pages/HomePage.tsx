@@ -63,7 +63,7 @@ export function HomePage() {
                 </div>
             </section>
 
-            {/* How it works — 3 steps */}
+            {/* How it works - 3 steps */}
             <section className="pb-24">
                 <h2 className="mb-8 text-center text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">
                     How it works
@@ -93,7 +93,7 @@ export function HomePage() {
                 </div>
             </section>
 
-            {/* Formats — simple grid, no accordion */}
+            {/* Formats - simple grid, no accordion */}
             <section className="pb-24">
                 <h2 className="mb-8 text-center text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">
                     Supported formats

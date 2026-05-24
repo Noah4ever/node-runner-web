@@ -3,9 +3,11 @@ import { RootLayout } from '@/layouts/RootLayout'
 import { HomePage } from '@/pages/HomePage'
 import { UploadPage } from '@/pages/UploadPage'
 import { ConvertPage } from '@/pages/ConvertPage'
+import { ViewerPage } from '@/pages/ViewerPage'
 import { DiffPage } from '@/pages/DiffPage'
 import { DiscoverPage } from '@/pages/DiscoverPage'
 import { SharedPage } from '@/pages/SharedPage'
+import { SharedRawPage } from '@/pages/SharedRawPage'
 import { DocsPage } from '@/pages/DocsPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { SignInPage } from '@/pages/SignInPage'
@@ -25,9 +27,12 @@ export function App() {
                     <Route path="upload" element={<UploadPage />} />
                     <Route path="paste" element={<Navigate to="/upload" replace />} />
                     <Route path="convert" element={<ConvertPage />} />
+                    <Route path="viewer" element={<ViewerPage />} />
                     <Route path="diff" element={<DiffPage />} />
                     <Route path="discover" element={<DiscoverPage />} />
                     <Route path="share/:id" element={<SharedPage />} />
+                    <Route path="share/:id/import" element={<SharedRawPage />} />
+                    <Route path="share/:id/raw" element={<SharedRawPage />} />
                     <Route path="docs" element={<DocsPage />} />
                     <Route path="signin" element={<SignInPage />} />
                     <Route path="auth/callback" element={<AuthCallbackPage />} />

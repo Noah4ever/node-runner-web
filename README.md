@@ -19,17 +19,17 @@ node-runner-web/
 
 ### Apps
 
-**`apps/api`** — Fastify + TypeScript backend with modular route structure:
-- `modules/health` — Health check
-- `modules/parse` — Format detection
-- `modules/validate` — Input validation
-- `modules/convert` — Format conversion
-- `modules/inspect` — Node tree inspection
-- `modules/share` — Shareable pages (in-memory store, Prisma schema ready)
-- `modules/diff` — Node tree comparison
-- `modules/ai` — AI explanations (placeholder)
+**`apps/api`** - Fastify + TypeScript backend with modular route structure:
+- `modules/health` - Health check
+- `modules/parse` - Format detection
+- `modules/validate` - Input validation
+- `modules/convert` - Format conversion
+- `modules/inspect` - Node tree inspection
+- `modules/share` - Shareable pages (in-memory store, Prisma schema ready)
+- `modules/diff` - Node tree comparison
+- `modules/ai` - AI explanations (placeholder)
 
-**`apps/web`** — React 19 + Vite + Tailwind v4 frontend:
+**`apps/web`** - React 19 + Vite + Tailwind v4 frontend:
 - Home page with hero, format cards, feature grid
 - Paste & Inspect page with format detection
 - Convert page with format selector
@@ -40,20 +40,20 @@ node-runner-web/
 
 ### Packages
 
-**`@node-runner/shared`** — Domain types used everywhere: `NodeTree`, `NodeData`, `NodeLink`, `NodeFormat`, `DiffResult`, `ApiResponse`, etc.
+**`@node-runner/shared`** - Domain types used everywhere: `NodeTree`, `NodeData`, `NodeLink`, `NodeFormat`, `DiffResult`, `ApiResponse`, etc.
 
-**`@node-runner/schemas`** — Zod schemas for all API endpoints. Single source of truth for request/response validation.
+**`@node-runner/schemas`** - Zod schemas for all API endpoints. Single source of truth for request/response validation.
 
-**`@node-runner/core`** — Domain logic with pluggable interfaces:
-- `FormatDetector` — Detect Hash/JSON/XML/AI JSON from raw input
-- `Parser` — Parse raw input into a normalized `NodeTree`
-- `Converter` — Convert between formats
-- `Validator` — Validate input for a given format
+**`@node-runner/core`** - Domain logic with pluggable interfaces:
+- `FormatDetector` - Detect Hash/JSON/XML/AI JSON from raw input
+- `Parser` - Parse raw input into a normalized `NodeTree`
+- `Converter` - Convert between formats
+- `Validator` - Validate input for a given format
 - Placeholder implementations included, designed for real addon logic to be dropped in
 
-**`@node-runner/ui`** — `cn()` utility (clsx + tailwind-merge), ready for shared components.
+**`@node-runner/ui`** - `cn()` utility (clsx + tailwind-merge), ready for shared components.
 
-**`@node-runner/config`** — Shared TypeScript configs: `tsconfig.base.json`, `tsconfig.react.json`, `tsconfig.node.json`.
+**`@node-runner/config`** - Shared TypeScript configs: `tsconfig.base.json`, `tsconfig.react.json`, `tsconfig.node.json`.
 
 ## Setup
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 
-// Comprehensive Blender tag list — most commonly used first
+// Comprehensive Blender tag list - most commonly used first
 const ALL_TAGS = [
     // Most frequently used
     'Shader', 'Geometry Nodes', 'Material', 'Texture', 'Animation',

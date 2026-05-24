@@ -8,7 +8,7 @@ const sessions = new PersistedMap<{ userId: string; email: string; name: string 
 const users = new PersistedMap<{ id: string; email: string; name: string | null; avatarUrl: string | null; provider: string; providerId: string; createdAt: string }>('users')
 const bannedUsers = new PersistedSet('banned-users')
 
-// OAuth state tokens (ephemeral — no need to persist)
+// OAuth state tokens (ephemeral - no need to persist)
 const oauthStates = new Map<string, { provider: string; createdAt: number }>()
 
 function generateSessionToken(): string {
