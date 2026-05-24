@@ -126,6 +126,41 @@ function resolveColor(
         ]
     }
 
+    // Color Ramp: pick the middle element (or average them). We can't evaluate
+    // the ramp at the upstream Fac without a Three.js shader, so we just give
+    // back a representative color so the BSDF isn't stuck at default white.
+    if (node.type === 'ShaderNodeValToRGB') {
+        const ramp = (node.properties?.color_ramp ?? (node as unknown as { settings?: { color_ramp?: unknown } }).settings?.color_ramp) as
+            | { elements?: { color?: number[] }[] }
+            | undefined
+        const elements = ramp?.elements
+        if (Array.isArray(elements) && elements.length > 0) {
+            // Average over all stops - tends to produce a balanced color.
+            let r = 0, g = 0, b = 0, n = 0
+            for (const el of elements) {
+                const c = el?.color
+                if (Array.isArray(c) && c.length >= 3) {
+                    r += c[0]; g += c[1]; b += c[2]; n++
+                }
+            }
+            if (n > 0) return [r / n, g / n, b / n]
+        }
+        return fallback
+    }
+
+    // Pass-throughs - these don't change the upstream color.
+    if (node.type === 'ShaderNodeMapping' || node.type === 'ShaderNodeBump' || node.type === 'ShaderNodeNormal' || node.type === 'ShaderNodeNormalMap' || node.type === 'ShaderNodeBrightContrast' || node.type === 'ShaderNodeGamma' || node.type === 'ShaderNodeHueSaturation' || node.type === 'ShaderNodeInvert' || node.type === 'ShaderNodeRGBCurve') {
+        // First input that's usually the color slot
+        const colorLink = tree.links.find((l) => l.toNode === upstream.fromNode && (l.toSocket === 'Color' || l.toSocket === 'Color1'))
+        if (colorLink) {
+            return resolveColor(tree, colorLink, fallback, unsupported, depth + 1)
+        }
+        // No upstream - use the stored Color input value if any
+        const c = inputValue(node.inputs as unknown[], 0)
+        if (Array.isArray(c) && c.length >= 3) return [c[0] as number, c[1] as number, c[2] as number]
+        return fallback
+    }
+
     unsupported.add(node.type)
     return null
 }
@@ -151,6 +186,22 @@ function resolveScalar(
     if (node.type === 'ShaderNodeValue') {
         const v = inputValue(node.inputs as unknown[], 0)
         if (typeof v === 'number') return v
+        return fallback
+    }
+    // Approximations for common nodes we can't really compute. Pick something
+    // sensible so the downstream BSDF still has plausible values.
+    if (node.type === 'ShaderNodeFresnel') {
+        // Fresnel typically drives roughness or mix factor; ~0.5 is a balanced
+        // approximation of a sphere's average viewing angle.
+        return 0.5
+    }
+    if (node.type === 'ShaderNodeLayerWeight') {
+        // Same idea - Facing/Fresnel outputs average to ~0.5 on a sphere.
+        const blend = inputValue(node.inputs as unknown[], 0)
+        return typeof blend === 'number' ? Math.max(0, Math.min(1, blend)) : 0.5
+    }
+    if (node.type === 'ShaderNodeMath') {
+        // Math could be anything; give up gracefully and use the fallback.
         return fallback
     }
     unsupported.add(node.type)
@@ -185,6 +236,12 @@ function getSocketValueOrLinked(
     }
     if (Array.isArray(raw) && raw.length >= 3) {
         return [raw[0] as number, raw[1] as number, raw[2] as number]
+    }
+    // Some uploads store a color socket as a single scalar (the user typed
+    // 0.25 instead of [0.25, 0.25, 0.25]); treat it as grayscale so we don't
+    // fall through to the white fallback.
+    if (typeof raw === 'number') {
+        return [raw, raw, raw]
     }
     return fallback as [number, number, number]
 }
