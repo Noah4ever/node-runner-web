@@ -35,6 +35,12 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
     async function handleRender() {
         setBusy(true)
         setError(null)
+        // Clear stale image so the user sees the "Rendering" state instead of
+        // a broken alt-text box while a slow render is in flight.
+        if (imageUrl) {
+            URL.revokeObjectURL(imageUrl)
+            setImageUrl(null)
+        }
         try {
             const token = localStorage.getItem('nr_token')
             const res = await fetch('/api/v1/render', {
@@ -51,11 +57,18 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
                     const body = await res.json() as { error?: { message?: string; code?: string } }
                     throw new Error(body.error?.message ?? `Render failed (HTTP ${res.status})`)
                 }
+                if (res.status === 504) {
+                    throw new Error('Render timed out. Try again - the first render after a server restart takes longer.')
+                }
                 throw new Error(`Render failed (HTTP ${res.status})`)
             }
             const blob = await res.blob()
+            // Defensive: a successful HTTP can still return non-PNG bytes if
+            // something upstream went wrong. Validate the type before showing.
+            if (!blob.type.startsWith('image/')) {
+                throw new Error('Server returned non-image response')
+            }
             const url = URL.createObjectURL(blob)
-            if (imageUrl) URL.revokeObjectURL(imageUrl)
             setImageUrl(url)
             // Pull fresh quota now that this render landed.
             queryClient.invalidateQueries({ queryKey: ['render', 'quota'] })
@@ -64,6 +77,14 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
         } finally {
             setBusy(false)
         }
+    }
+
+    function handleImageError() {
+        // The browser failed to decode the blob - revoke and clear so the
+        // broken alt-text box doesn't stick around.
+        if (imageUrl) URL.revokeObjectURL(imageUrl)
+        setImageUrl(null)
+        setError('Could not display the rendered image. Try Re-render.')
     }
 
     return (
@@ -89,8 +110,16 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
                 <img
                     src={imageUrl}
                     alt={`Rendered preview of ${slug}`}
+                    onError={handleImageError}
                     className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)]"
                 />
+            ) : busy ? (
+                <div className="flex items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-bg)] aspect-square">
+                    <div className="flex flex-col items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                        <svg className="h-6 w-6 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        Rendering in Blender…
+                    </div>
+                </div>
             ) : (
                 <p className="text-xs text-[var(--color-text-faint)]">
                     Render this material on a sphere with real Blender (Eevee). Takes a few seconds.

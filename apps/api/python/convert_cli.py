@@ -138,6 +138,11 @@ def main() -> int:
         # constants (FORMAT_HASH = "HASH", etc.).
         source_norm = source.upper() if isinstance(source, str) else source
         target_norm = target.upper() if isinstance(target, str) else target
+        # Hash exports from the Blender addon include a "Name__NR<base64>" header.
+        # The bare encoding lib doesn't strip it, so we do it here (mirrors what
+        # _strip_header_and_detect in operators.py does on the addon side).
+        if source_norm == "HASH" and isinstance(payload, str) and "__NR" in payload:
+            payload = payload.split("__NR", 1)[1]
         if source_norm == target_norm:
             _emit({"ok": True, "output": payload})
             return 0

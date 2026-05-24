@@ -167,9 +167,15 @@ function getSocketValueOrLinked(
 ): [number, number, number] | number | null {
     const link = getLinkInto(tree.links, nodeId, socketName)
     if (link) {
-        return isScalar
+        const resolved = isScalar
             ? resolveScalar(tree, link, fallback as number, unsupported, 0)
             : resolveColor(tree, link, fallback as [number, number, number], unsupported, 0)
+        // Upstream node is supported and gave us a value? Use it.
+        if (resolved !== null) return resolved
+        // Otherwise fall through to the node's own stored input value, which is
+        // what Blender keeps as the socket's default when something is linked
+        // into it. Always better than null - the user's tree might have a usable
+        // value even though one upstream node is unsupported.
     }
     const raw = inputValue(node.inputs as unknown[], defaultIndex)
     if (isScalar) {
