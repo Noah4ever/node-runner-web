@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { NodeGraph } from '@/components/NodeGraph'
 import { NodeInspector } from '@/components/NodeInspector'
 import { ShaderPreview } from '@/components/ShaderPreview'
+import { HQRender } from '@/components/HQRender'
 import { FORMAT_LABELS, type NodeFormat } from '@node-runner/shared'
 import type { NodeTree, NodeData } from '@node-runner/shared'
 
@@ -243,6 +244,13 @@ export function ViewerPage() {
                                 <ShaderPreview tree={tree} size={200} />
                             </div>
                         </div>
+                    )}
+
+                    {/* High-quality render via headless blender. Renders the
+                        current textarea content - hit "Apply changes" first if
+                        you've edited and want the latest values reflected. */}
+                    {tree && format && (
+                        <HQRender content={input} format={format} slug={dirty ? 'editor-draft' : 'editor'} />
                     )}
                 </div>
 

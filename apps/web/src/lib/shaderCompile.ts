@@ -36,6 +36,8 @@ const SUPPORTED_BSDFS = new Set([
     'ShaderNodeBackground',
     'ShaderNodeBsdfGlass',
     'ShaderNodeBsdfTransparent',
+    'ShaderNodeMixShader',
+    'ShaderNodeAddShader',
 ])
 
 const SUPPORTED_VALUE_NODES = new Set([
@@ -187,33 +189,75 @@ function getSocketValueOrLinked(
     return fallback as [number, number, number]
 }
 
-export function compileTree(tree: NodeTree | null): CompileResult {
-    if (!tree) return { material: null, unsupported: [], noOutput: true }
+function resolveSurface(
+    tree: NodeTree,
+    nodeId: string,
+    unsupported: Set<string>,
+    depth: number,
+): CompiledMaterial | null {
+    if (depth > 6) return null
+    const node = tree.nodes[nodeId]
+    if (!node) return null
 
-    // Find Material Output (could be named anything; identified by type).
-    const outputEntry = Object.entries(tree.nodes).find(([, n]) => n.type === 'ShaderNodeOutputMaterial' || n.type === 'ShaderNodeOutputWorld')
-    if (!outputEntry) return { material: null, unsupported: [], noOutput: true }
-    const [outputId] = outputEntry
+    if (!SUPPORTED_BSDFS.has(node.type)) {
+        unsupported.add(node.type)
+        return null
+    }
 
-    const surfaceLink = getLinkInto(tree.links, outputId, 'Surface')
-    const unsupported = new Set<string>()
+    // Mix Shader: blend two upstream shaders by Fac. Add Shader: average them.
+    // Recurse into both inputs; if one fails, fall back to the other.
+    if (node.type === 'ShaderNodeMixShader' || node.type === 'ShaderNodeAddShader') {
+        const link1 = getLinkInto(tree.links, nodeId, 'Shader')
+        // Two sockets share the name "Shader" - find both by position.
+        const shaderLinks = tree.links.filter((l) => l.toNode === nodeId && l.toSocket === 'Shader')
+        const linkA = shaderLinks[0]
+        const linkB = shaderLinks[1] ?? link1
+        const a = linkA ? resolveSurface(tree, linkA.fromNode, unsupported, depth + 1) : null
+        const b = linkB && linkB !== linkA ? resolveSurface(tree, linkB.fromNode, unsupported, depth + 1) : null
+        if (!a && !b) return null
+        if (!a) return b
+        if (!b) return a
+        // Blend factor: MixShader takes Fac (input 0); AddShader = 0.5 implicit.
+        let fac = 0.5
+        if (node.type === 'ShaderNodeMixShader') {
+            const facLink = getLinkInto(tree.links, nodeId, 'Fac')
+            if (facLink) {
+                const f = resolveScalar(tree, facLink, 0.5, unsupported, 0)
+                if (typeof f === 'number') fac = f
+            } else {
+                const raw = inputValue(node.inputs as unknown[], 0)
+                if (typeof raw === 'number') fac = Math.max(0, Math.min(1, raw))
+            }
+        }
+        return {
+            baseColor: [
+                a.baseColor[0] * (1 - fac) + b.baseColor[0] * fac,
+                a.baseColor[1] * (1 - fac) + b.baseColor[1] * fac,
+                a.baseColor[2] * (1 - fac) + b.baseColor[2] * fac,
+            ],
+            metallic: a.metallic * (1 - fac) + b.metallic * fac,
+            roughness: a.roughness * (1 - fac) + b.roughness * fac,
+            emissive: [
+                a.emissive[0] * (1 - fac) + b.emissive[0] * fac,
+                a.emissive[1] * (1 - fac) + b.emissive[1] * fac,
+                a.emissive[2] * (1 - fac) + b.emissive[2] * fac,
+            ],
+            emissiveIntensity: a.emissiveIntensity * (1 - fac) + b.emissiveIntensity * fac,
+            opacity: a.opacity * (1 - fac) + b.opacity * fac,
+            transparent: a.transparent || b.transparent,
+        }
+    }
+
+    return buildLeafBsdf(tree, node, nodeId, unsupported)
+}
+
+function buildLeafBsdf(
+    tree: NodeTree,
+    node: NodeData,
+    id: string,
+    unsupported: Set<string>,
+): CompiledMaterial {
     const material: CompiledMaterial = { ...DEFAULT_MATERIAL }
-
-    if (!surfaceLink) {
-        return { material, unsupported: [], noOutput: false }
-    }
-
-    const surfaceNode = tree.nodes[surfaceLink.fromNode]
-    if (!surfaceNode) return { material, unsupported: [], noOutput: false }
-
-    if (!SUPPORTED_BSDFS.has(surfaceNode.type)) {
-        unsupported.add(surfaceNode.type)
-        return { material: null, unsupported: Array.from(unsupported), noOutput: false }
-    }
-
-    const id = surfaceLink.fromNode
-    const node = surfaceNode
-
     switch (node.type) {
         case 'ShaderNodeBsdfPrincipled': {
             // Principled BSDF inputs (Blender 4.x):
@@ -279,12 +323,31 @@ export function compileTree(tree: NodeTree | null): CompileResult {
         }
         default:
             unsupported.add(node.type)
-            return { material: null, unsupported: Array.from(unsupported), noOutput: false }
+            break
+    }
+    return material
+}
+
+export function compileTree(tree: NodeTree | null): CompileResult {
+    if (!tree) return { material: null, unsupported: [], noOutput: true }
+
+    // Find Material Output (could be named anything; identified by type).
+    const outputEntry = Object.entries(tree.nodes).find(([, n]) => n.type === 'ShaderNodeOutputMaterial' || n.type === 'ShaderNodeOutputWorld')
+    if (!outputEntry) return { material: null, unsupported: [], noOutput: true }
+    const [outputId] = outputEntry
+
+    const surfaceLink = getLinkInto(tree.links, outputId, 'Surface')
+    const unsupported = new Set<string>()
+
+    if (!surfaceLink) {
+        return { material: { ...DEFAULT_MATERIAL }, unsupported: [], noOutput: false }
     }
 
-    // If upstream resolution flagged anything we don't handle, surface that
-    // but still ship the partial material so users see *something*. The list
-    // is informational ("we approximated, here's what we skipped").
+    const material = resolveSurface(tree, surfaceLink.fromNode, unsupported, 0)
+    if (!material) {
+        return { material: null, unsupported: Array.from(unsupported), noOutput: false }
+    }
+
     return {
         material,
         unsupported: Array.from(unsupported).filter((t) => !SUPPORTED_VALUE_NODES.has(t) && !SUPPORTED_BSDFS.has(t)),
