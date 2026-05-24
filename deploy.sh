@@ -52,6 +52,14 @@ rsync -avz --delete --exclude='.env' --exclude='data' \
     apps/api/package.json \
     "${SERVER}:${DEPLOY_DIR}/apps/api/"
 
+# Sync python converter wrappers (encoding.py itself is fetched from GitHub
+# into DATA_DIR/python/node_runner/ on first use).
+info "Uploading python converter CLIs..."
+ssh "$SERVER" "mkdir -p ${DEPLOY_DIR}/apps/api/python"
+rsync -avz --exclude='vendor' --exclude='__pycache__' \
+    apps/api/python/ \
+    "${SERVER}:${DEPLOY_DIR}/apps/api/python/"
+
 # Sync workspace packages that the API needs at runtime
 info "Uploading shared packages..."
 ssh "$SERVER" "mkdir -p ${DEPLOY_DIR}/packages/{shared,schemas,node-runner-core,config,ui}"

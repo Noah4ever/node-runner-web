@@ -18,10 +18,23 @@ export function ViewerPage() {
     const [nodeCount, setNodeCount] = useState(0)
     const [linkCount, setLinkCount] = useState(0)
     const [selectedNode, setSelectedNode] = useState<string | null>(null)
+    const [graphFullscreen, setGraphFullscreen] = useState(false)
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+    useEffect(() => {
+        if (!graphFullscreen) return
+        function onKey(e: KeyboardEvent) {
+            if (e.key === 'Escape') setGraphFullscreen(false)
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [graphFullscreen])
 
     const trigger = useCallback((value: string) => {
         if (debounce.current) clearTimeout(debounce.current)
+        // Drop any node selection from the previous tree - it will dangle
+        // otherwise when the new tree has different node ids.
+        setSelectedNode(null)
         if (!value.trim()) { setTree(null); setFormat(null); setNodeCount(0); setLinkCount(0); return }
         debounce.current = setTimeout(async () => {
             try {
@@ -132,14 +145,25 @@ export function ViewerPage() {
                 </div>
 
                 {/* Graph preview */}
-                <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden" style={{ height: '480px' }}>
+                <div className="relative rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden" style={{ height: '480px' }}>
                     {tree && Object.keys(tree.nodes).length > 0 ? (
-                        <NodeGraph
-                            tree={tree}
-                            className="h-full w-full"
-                            onNodeClick={(name) => setSelectedNode(name)}
-                            selectedNode={selectedNode}
-                        />
+                        <>
+                            <NodeGraph
+                                tree={tree}
+                                className="h-full w-full"
+                                onNodeClick={(name) => setSelectedNode(name)}
+                                selectedNode={selectedNode}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setGraphFullscreen(true)}
+                                title="Fullscreen"
+                                aria-label="Fullscreen"
+                                className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-md bg-black/40 text-white/70 hover:bg-black/60 hover:text-white cursor-pointer transition-colors z-10"
+                            >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" /></svg>
+                            </button>
+                        </>
                     ) : (
                         <div className="flex h-full items-center justify-center p-8">
                             <p className="text-sm text-[var(--color-text-faint)] text-center">
@@ -174,10 +198,38 @@ export function ViewerPage() {
                 </div>
             )}
 
-            {tree && Object.keys(tree.nodes).length > 0 && !selectedNode && (
-                <p className="mt-3 text-xs text-[var(--color-text-faint)]">
-                    Tip: click any node in the graph to see its inputs, outputs and properties.
-                </p>
+            {/* Fullscreen graph - inspector overlays on the right when a node
+                is selected, matching the share-page behaviour. */}
+            {graphFullscreen && tree && (
+                <div className="fixed inset-0 z-50 flex bg-[var(--color-bg)]">
+                    <button
+                        type="button"
+                        onClick={() => setGraphFullscreen(false)}
+                        aria-label="Close fullscreen"
+                        className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 cursor-pointer z-20"
+                    >
+                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                    <div className="flex-1 min-w-0">
+                        <NodeGraph
+                            tree={tree}
+                            className="h-full w-full"
+                            onNodeClick={(name) => setSelectedNode(name)}
+                            selectedNode={selectedNode}
+                        />
+                    </div>
+                    {selectedNode && (
+                        <div className="w-80 border-l border-[var(--color-border)] overflow-y-auto">
+                            <NodeInspector
+                                tree={tree}
+                                nodeName={selectedNode}
+                                onClose={() => setSelectedNode(null)}
+                                onSelect={(n) => setSelectedNode(n)}
+                                className="h-full border-0 rounded-none"
+                            />
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     )

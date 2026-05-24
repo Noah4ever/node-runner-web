@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react'
-import ReactFlow, { Background, Controls, MiniMap, Panel, Position, type Node, type Edge } from 'reactflow'
+import { useEffect, useMemo, useState } from 'react'
+import ReactFlow, { Background, Controls, MiniMap, Panel, useReactFlow, useNodesInitialized, ReactFlowProvider, type Node, type Edge } from 'reactflow'
 import 'reactflow/dist/style.css'
 import type { NodeTree } from '@node-runner/shared'
+import { BlenderNode, CompactNode, type BlenderNodeData, type BlenderSocket, type BlenderProperty } from './BlenderNode'
+import { useSocketNames } from '@/hooks/useApi'
+import { inferSocket, isCommonProperty, unwrapSocket } from './nodeSocket'
 
-const nodeTypes = {}
+const nodeTypes = { blender: BlenderNode, compact: CompactNode }
 const edgeTypes = {}
 
 // Blender-accurate node colors by category. Order matters - more specific
@@ -67,11 +70,55 @@ interface NodeGraphProps {
     selectedNode?: string | null
 }
 
-export function NodeGraph({ tree, className = '', compact = false, onNodeClick, selectedNode }: NodeGraphProps) {
+// Re-runs fitView once ReactFlow has actually measured all custom-node DOM
+// elements. Without this, fitView at mount uses placeholder dimensions and
+// the viewport ends up off-center (especially in small thumbnails where custom
+// nodes are bigger relative to the container).
+function AutoFit({ tree, padding }: { tree: NodeTree; padding: number }) {
+    const initialized = useNodesInitialized()
+    const { fitView } = useReactFlow()
+    useEffect(() => {
+        if (!initialized) return
+        fitView({ padding, duration: 0 })
+    }, [initialized, fitView, padding, tree])
+    return null
+}
+
+export function NodeGraph(props: NodeGraphProps) {
+    // ReactFlowProvider is required for the AutoFit child to use useReactFlow.
+    return (
+        <ReactFlowProvider>
+            <NodeGraphInner {...props} />
+        </ReactFlowProvider>
+    )
+}
+
+function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, selectedNode }: NodeGraphProps) {
     const [miniMapOpen, setMiniMapOpen] = useState(true)
+    const { data: socketNames } = useSocketNames()
+
     const { nodes, edges } = useMemo(() => {
         const entries = Object.entries(tree.nodes)
         if (entries.length === 0) return { nodes: [], edges: [] }
+
+        // Pre-compute incoming/outgoing socket names per node so each row knows
+        // if it's linked without scanning all links per render.
+        const incomingBySock = new Map<string, Set<string>>()
+        const outgoingBySock = new Map<string, Set<string>>()
+        for (const link of tree.links) {
+            const inSet = incomingBySock.get(link.toNode) ?? new Set<string>()
+            inSet.add(link.toSocket)
+            incomingBySock.set(link.toNode, inSet)
+            const outSet = outgoingBySock.get(link.fromNode) ?? new Set<string>()
+            outSet.add(link.fromSocket)
+            outgoingBySock.set(link.fromNode, outSet)
+        }
+
+        function socketName(type: string, side: 'in' | 'out', i: number, embedded: string | null): string {
+            if (embedded) return embedded
+            const tables = socketNames ? (side === 'in' ? socketNames.inputs : socketNames.outputs) : null
+            return tables?.[type]?.[i] ?? `${side}[${i}]`
+        }
 
         const flowNodes: Node[] = entries.map(([name, data], i) => {
             const loc = data.location as unknown
@@ -86,29 +133,65 @@ export function NodeGraph({ tree, className = '', compact = false, onNodeClick, 
                 x = i * 250
                 y = 0
             }
+
+            const rawInputs = Array.isArray(data.inputs) ? data.inputs : []
+            const rawOutputs = Array.isArray(data.outputs) ? data.outputs : []
+            const incoming = incomingBySock.get(name) ?? new Set<string>()
+            const outgoing = outgoingBySock.get(name) ?? new Set<string>()
+
+            // Sockets serialized with a default value get rendered with that value.
+            // Sockets that are only referenced by links (no serialized default,
+            // e.g. Texture Coordinate's outputs) still need a Handle to connect to
+            // so we append them as link-only entries with no inline value.
+            const inputs: BlenderSocket[] = rawInputs.map((raw, idx) => {
+                const { name: embeddedName, value } = unwrapSocket(raw)
+                const sName = socketName(data.type, 'in', idx, embeddedName)
+                const { color, kind } = inferSocket(sName, value)
+                return { name: sName, value, linked: incoming.has(sName), color, kind }
+            })
+            const seenInNames = new Set(inputs.map((s) => s.name))
+            for (const linkName of incoming) {
+                if (!seenInNames.has(linkName)) {
+                    const { color, kind } = inferSocket(linkName, null)
+                    inputs.push({ name: linkName, value: null, linked: true, color, kind })
+                    seenInNames.add(linkName)
+                }
+            }
+
+            const outputs: BlenderSocket[] = rawOutputs.map((raw, idx) => {
+                const { name: embeddedName, value } = unwrapSocket(raw)
+                const sName = socketName(data.type, 'out', idx, embeddedName)
+                const { color, kind } = inferSocket(sName, value)
+                return { name: sName, value, linked: outgoing.has(sName), color, kind }
+            })
+            const seenOutNames = new Set(outputs.map((s) => s.name))
+            for (const linkName of outgoing) {
+                if (!seenOutNames.has(linkName)) {
+                    const { color, kind } = inferSocket(linkName, null)
+                    outputs.push({ name: linkName, value: null, linked: true, color, kind })
+                    seenOutNames.add(linkName)
+                }
+            }
+
+            const properties: BlenderProperty[] = Object.entries(data.properties ?? {})
+                .filter(([k]) => !isCommonProperty(k))
+                .map(([key, value]) => ({ key, value }))
+
+            const blenderData: BlenderNodeData = {
+                title: data.label || getShortType(data.type) || name,
+                subtitle: data.type,
+                headerColor: getNodeColor(data.type),
+                inputs,
+                outputs,
+                properties,
+                isSelected: selectedNode === name,
+            }
+
             return {
                 id: name,
+                type: compact ? 'compact' : 'blender',
                 position: { x, y: -y }, // Blender Y is inverted
-                sourcePosition: Position.Right,
-                targetPosition: Position.Left,
-                data: {
-                    label: (
-                        <div className="text-left">
-                            <div className="text-[10px] font-semibold text-white truncate max-w-[160px]">{data.label || name}</div>
-                            <div className="text-[9px] text-gray-400">{getShortType(data.type)}</div>
-                        </div>
-                    ),
-                },
-                style: {
-                    background: getNodeColor(data.type),
-                    border: selectedNode === name ? '2px solid #fff' : '1px solid #555',
-                    boxShadow: selectedNode === name ? '0 0 0 3px rgba(255,180,0,0.35)' : undefined,
-                    borderRadius: '4px',
-                    padding: '6px 10px',
-                    minWidth: '120px',
-                    fontSize: '10px',
-                    cursor: onNodeClick ? 'pointer' : 'default',
-                },
+                data: blenderData,
             }
         })
 
@@ -116,14 +199,15 @@ export function NodeGraph({ tree, className = '', compact = false, onNodeClick, 
             id: `e${i}`,
             source: link.fromNode,
             target: link.toNode,
-            sourceHandle: link.fromSocket,
-            targetHandle: link.toSocket,
-            style: { stroke: '#777', strokeWidth: 1.5 },
+            // In compact mode the simplified node has only default handles, so
+            // omit the per-socket handle IDs and let the edge connect to those.
+            ...(compact ? {} : { sourceHandle: link.fromSocket, targetHandle: link.toSocket }),
+            style: { stroke: '#888', strokeWidth: 2 },
             animated: false,
         }))
 
         return { nodes: flowNodes, edges: flowEdges }
-    }, [tree, selectedNode, onNodeClick])
+    }, [tree, selectedNode, socketNames, compact])
 
     if (nodes.length === 0) {
         return (
@@ -134,7 +218,7 @@ export function NodeGraph({ tree, className = '', compact = false, onNodeClick, 
     }
 
     return (
-        <div className={className} style={{ minHeight: '300px' }}>
+        <div className={className} style={{ minHeight: compact ? undefined : '300px' }}>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -158,6 +242,7 @@ export function NodeGraph({ tree, className = '', compact = false, onNodeClick, 
                 onPaneClick={onNodeClick ? () => onNodeClick(null) : undefined}
             >
                 <Background color="#222" gap={20} size={1} />
+                <AutoFit tree={tree} padding={compact ? 0.05 : 0.2} />
                 {!compact && (
                     <>
                         <Controls showInteractive={false} position="bottom-right" />

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useGetShare, useToggleLike, useToggleSave, useDeleteShare, useToggleBan, useAuth } from '@/hooks/useApi'
 import { useAuthStore } from '@/stores/nodeStore'
 import { NodeGraph } from '@/components/NodeGraph'
+import { NodeInspector } from '@/components/NodeInspector'
 import { UserAvatar } from '@/components/UserAvatar'
 import { InlineConvert } from '@/components/InlineConvert'
 import type { NodeTree, NodeFormat } from '@node-runner/shared'
@@ -44,6 +45,7 @@ export function SharedPage() {
     const [copiedImport, setCopiedImport] = useState(false)
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
     const [graphFullscreen, setGraphFullscreen] = useState(false)
+    const [selectedNode, setSelectedNode] = useState<string | null>(null)
 
     const pageImages = page?.images ?? []
 
@@ -153,18 +155,35 @@ export function SharedPage() {
                         </div>
                     )}
 
-                    {/* Graph Preview */}
+                    {/* Graph Preview - same capabilities as the Viewer page:
+                        click a node to open the inspector, fullscreen toggle. */}
                     {page.tree && Object.keys(page.tree.nodes).length > 0 ? (
-                        <div className="relative rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden" style={{ height: '350px' }}>
-                            <NodeGraph tree={page.tree} className="h-full w-full" />
-                            <button
-                                type="button"
-                                onClick={() => setGraphFullscreen(true)}
-                                className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-md bg-black/40 text-white/70 hover:bg-black/60 hover:text-white cursor-pointer transition-colors z-10"
-                                title="Fullscreen"
-                            >
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" /></svg>
-                            </button>
+                        <div className="space-y-3">
+                            <div className="relative rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden" style={{ height: '420px' }}>
+                                <NodeGraph
+                                    tree={page.tree}
+                                    className="h-full w-full"
+                                    onNodeClick={(name) => setSelectedNode(name)}
+                                    selectedNode={selectedNode}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setGraphFullscreen(true)}
+                                    className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-md bg-black/40 text-white/70 hover:bg-black/60 hover:text-white cursor-pointer transition-colors z-10"
+                                    title="Fullscreen"
+                                >
+                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" /></svg>
+                                </button>
+                            </div>
+                            {selectedNode && page.tree && (
+                                <NodeInspector
+                                    tree={page.tree}
+                                    nodeName={selectedNode}
+                                    onClose={() => setSelectedNode(null)}
+                                    onSelect={(n) => setSelectedNode(n)}
+                                    className="max-h-[420px]"
+                                />
+                            )}
                         </div>
                     ) : pageImages.length === 0 ? (
                         <div className="flex h-72 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -359,18 +378,36 @@ export function SharedPage() {
                 </div>
             </div>
 
-            {/* Graph Fullscreen */}
+            {/* Graph Fullscreen - inspector overlays from the right when a node
+                is selected so the user can browse the tree at full size. */}
             {graphFullscreen && page.tree && (
-                <div className="fixed inset-0 z-50 flex flex-col bg-[var(--color-bg)]">
+                <div className="fixed inset-0 z-50 flex bg-[var(--color-bg)]">
                     <button
                         onClick={() => setGraphFullscreen(false)}
-                        className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 cursor-pointer z-10"
+                        className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 cursor-pointer z-20"
+                        aria-label="Close fullscreen"
                     >
                         <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
-                    <div className="flex-1">
-                        <NodeGraph tree={page.tree} className="h-full w-full" />
+                    <div className="flex-1 min-w-0">
+                        <NodeGraph
+                            tree={page.tree}
+                            className="h-full w-full"
+                            onNodeClick={(name) => setSelectedNode(name)}
+                            selectedNode={selectedNode}
+                        />
                     </div>
+                    {selectedNode && page.tree && (
+                        <div className="w-80 border-l border-[var(--color-border)] overflow-y-auto">
+                            <NodeInspector
+                                tree={page.tree}
+                                nodeName={selectedNode}
+                                onClose={() => setSelectedNode(null)}
+                                onSelect={(n) => setSelectedNode(n)}
+                                className="h-full border-0 rounded-none"
+                            />
+                        </div>
+                    )}
                 </div>
             )}
 
