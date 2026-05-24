@@ -21,8 +21,9 @@ const BLENDER_BIN = process.env.BLENDER_BIN ?? 'blender'
 // display. macOS/dev users have a real display so wrapping isn't needed.
 const USE_XVFB = process.env.BLENDER_USE_XVFB !== '0' && process.platform === 'linux'
 // Cap renders so a slow Cycles render or hung Blender process can't tie up
-// the API thread forever. Eevee renders typically finish in under 5s.
-const RENDER_TIMEOUT_MS = 60_000
+// the API thread forever. Blender 4.5 cold-start under xvfb is ~25-40s,
+// then the render itself is sub-second for simple shaders.
+const RENDER_TIMEOUT_MS = 110_000
 
 mkdirSync(CACHE_DIR, { recursive: true })
 
