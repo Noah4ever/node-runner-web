@@ -34,13 +34,14 @@ function inputValue(inputs: unknown[], index: number): unknown {
     return raw
 }
 
-function findInputByName(node: NodeData, name: string): { index: number; value: unknown } | null {
+function findInputByName(node: NodeData, names: string | string[]): { index: number; value: unknown } | null {
+    const candidates = Array.isArray(names) ? names : [names]
     const arr = node.inputs as unknown[]
     for (let i = 0; i < arr.length; i++) {
         const raw = arr[i]
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
             const obj = raw as { name?: unknown; value?: unknown }
-            if (obj.name === name) {
+            if (typeof obj.name === 'string' && candidates.includes(obj.name)) {
                 return { index: i, value: 'value' in obj ? obj.value : raw }
             }
         }
@@ -48,8 +49,14 @@ function findInputByName(node: NodeData, name: string): { index: number; value: 
     return null
 }
 
-function getLinkInto(links: NodeLink[], toNode: string, toSocket: string): NodeLink | undefined {
-    return links.find((l) => l.toNode === toNode && l.toSocket === toSocket)
+function getLinkInto(links: NodeLink[], toNode: string, socketNames: string | string[]): NodeLink | undefined {
+    const candidates = Array.isArray(socketNames) ? socketNames : [socketNames]
+    return links.find((l) => l.toNode === toNode && candidates.includes(l.toSocket))
+}
+
+function getAllLinksInto(links: NodeLink[], toNode: string, socketNames: string | string[]): NodeLink[] {
+    const candidates = Array.isArray(socketNames) ? socketNames : [socketNames]
+    return links.filter((l) => l.toNode === toNode && candidates.includes(l.toSocket))
 }
 
 function glslFloat(n: number): string {
@@ -120,18 +127,22 @@ class Compiler {
         return type === 'float' ? '0.0' : 'vec3(0.0)'
     }
 
-    /** Resolve a node's input socket to a GLSL expression of the given type. */
-    private resolveInput(nodeId: string, socketName: string, type: 'float' | 'vec3', fallback?: number | number[]): string {
+    /** Resolve a node's input socket to a GLSL expression of the given type.
+     *  socketNames can be an alias list to handle Blender version differences
+     *  (e.g. ['A', 'Color1'] for the new and old Mix node). The first that
+     *  matches a link OR a stored value wins. */
+    private resolveInput(nodeId: string, socketNames: string | string[], type: 'float' | 'vec3', fallback?: number | number[]): string {
+        const candidates = Array.isArray(socketNames) ? socketNames : [socketNames]
         const node = this.tree.nodes[nodeId]
         if (!node) return type === 'float' ? glslFloat(typeof fallback === 'number' ? fallback : 0) : vec3Literal(Array.isArray(fallback) ? fallback : [0, 0, 0])
 
-        const link = getLinkInto(this.tree.links, nodeId, socketName)
+        const link = getLinkInto(this.tree.links, nodeId, candidates)
         if (link) {
             return this.resolveOutput(link.fromNode, link.fromSocket, type)
         }
 
-        // Look at the stored input value
-        const byName = findInputByName(node, socketName)
+        // Look at the stored input value under any of the alias names
+        const byName = findInputByName(node, candidates)
         const raw = byName ? byName.value : undefined
         if (type === 'float') {
             if (typeof raw === 'number') return glslFloat(raw)
@@ -254,9 +265,12 @@ class Compiler {
 
             case 'ShaderNodeMixRGB':
             case 'ShaderNodeMix': {
-                const fac = this.resolveInput(id, 'Fac', 'float', 0.5)
-                const a = this.resolveInput(id, 'Color1', 'vec3', [0, 0, 0])
-                const b = this.resolveInput(id, 'Color2', 'vec3', [1, 1, 1])
+                // Socket names vary across Blender versions:
+                //   <3.4  : Fac, Color1, Color2 (output: Color)
+                //   >=3.4 : Factor / Fac, A / Color1, B / Color2 (output: Result)
+                const fac = this.resolveInput(id, ['Fac', 'Factor'], 'float', 0.5)
+                const a = this.resolveInput(id, ['A', 'Color1'], 'vec3', [0, 0, 0])
+                const b = this.resolveInput(id, ['B', 'Color2'], 'vec3', [1, 1, 1])
                 const mixExpr = `mix(${a}, ${b}, clamp(${fac}, 0.0, 1.0))`
                 if (socketName === 'Result' || socketName === 'Color') {
                     return type === 'float' ? `dot(${mixExpr}, vec3(0.333))` : mixExpr
@@ -267,8 +281,10 @@ class Compiler {
             case 'ShaderNodeMath': {
                 const op = (node.properties?.operation ?? 'ADD') as string
                 const a = this.resolveInput(id, 'Value', 'float', 0)
-                // The second 'Value' socket - look up by indexed position
-                const link2 = this.tree.links.filter((l) => l.toNode === id && l.toSocket === 'Value')[1]
+                // The second 'Value' socket - look up by indexed position (some
+                // versions use "Value_001" / "Value 1" identifiers).
+                const valueLinks = getAllLinksInto(this.tree.links, id, 'Value')
+                const link2 = valueLinks[1] ?? getLinkInto(this.tree.links, id, ['Value_001', 'Value 1', 'Value.001'])
                 let b: string
                 if (link2) b = this.resolveOutput(link2.fromNode, link2.fromSocket, 'float')
                 else {
@@ -294,7 +310,8 @@ class Compiler {
             case 'ShaderNodeVectorMath': {
                 const op = (node.properties?.operation ?? 'ADD') as string
                 const a = this.resolveInput(id, 'Vector', 'vec3', [0, 0, 0])
-                const link2 = this.tree.links.filter((l) => l.toNode === id && l.toSocket === 'Vector')[1]
+                const vectorLinks = getAllLinksInto(this.tree.links, id, 'Vector')
+                const link2 = vectorLinks[1] ?? getLinkInto(this.tree.links, id, ['Vector_001', 'Vector 1', 'Vector.001'])
                 let b: string
                 if (link2) b = this.resolveOutput(link2.fromNode, link2.fromSocket, 'vec3')
                 else {
@@ -356,13 +373,20 @@ class Compiler {
         if (!node) return { color: 'vec3(0.8)', rough: '0.5', metal: '0.0', emit: 'vec3(0.0)', alpha: '1.0' }
 
         if (node.type === 'ShaderNodeMixShader' || node.type === 'ShaderNodeAddShader') {
-            const shaderLinks = this.tree.links.filter((l) => l.toNode === nodeId && l.toSocket === 'Shader')
-            const linkA = shaderLinks[0]
-            const linkB = shaderLinks[1]
+            // Some Blender versions name both shader inputs "Shader" (and rely
+            // on socket-index disambiguation), some use "Shader" and "Shader 1".
+            // Some serializers expose them as "Shader_001". Grab all links to
+            // anything starting with "Shader" then pick first two.
+            const shaderLinks = this.tree.links.filter((l) =>
+                l.toNode === nodeId && (l.toSocket === 'Shader' || /^Shader[\s_]*1$/i.test(l.toSocket) || /^Shader[._]\d+$/i.test(l.toSocket))
+            )
+            // First "Shader" link is index 0, second is index 1.
+            const linkA = shaderLinks.find((l) => l.toSocket === 'Shader') ?? shaderLinks[0]
+            const linkB = shaderLinks.filter((l) => l !== linkA)[0]
             if (!linkA && !linkB) return { color: 'vec3(0.8)', rough: '0.5', metal: '0.0', emit: 'vec3(0.0)', alpha: '1.0' }
             let mixFac = '0.5'
             if (node.type === 'ShaderNodeMixShader') {
-                mixFac = this.resolveInput(nodeId, 'Fac', 'float', 0.5)
+                mixFac = this.resolveInput(nodeId, ['Fac', 'Factor'], 'float', 0.5)
             }
             const a = linkA ? this.emitSurface(linkA.fromNode) : null
             const b = linkB ? this.emitSurface(linkB.fromNode) : null

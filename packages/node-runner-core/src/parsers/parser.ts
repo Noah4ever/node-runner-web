@@ -20,7 +20,14 @@ export class PlaceholderParser implements Parser {
         }
     }
 
-    /** Regular JSON: inputs are positional lists, links are full dicts with from_node/to_node */
+    /** Regular JSON parser. Lenient about shape so the same path handles both:
+     *   - Python-native: positional input arrays, links as {from_node,...} dicts
+     *   - AI-style: named input dicts, links as ["From.Out", "To.In"] string pairs
+     *   - Either location shape: [x, y] array or {x, y} object
+     *
+     *  Anything we can't recognize for a given node just gets stored as a
+     *  property so the round-trip preserves data.
+     */
     private parseStandardJson(input: string): NodeTree {
         try {
             const data = JSON.parse(input)
@@ -37,6 +44,26 @@ export class PlaceholderParser implements Parser {
                 if (Array.isArray(loc) && loc.length >= 2) {
                     x = Number(loc[0]) || 0
                     y = Number(loc[1]) || 0
+                } else if (loc && typeof loc === 'object' && 'x' in (loc as Record<string, unknown>)) {
+                    x = Number((loc as Record<string, unknown>).x) || 0
+                    y = Number((loc as Record<string, unknown>).y) || 0
+                }
+
+                // Inputs can be a positional array OR a named dict like
+                // {"Vector": 3.5, "Scale": 0.65}. Normalize the dict shape to
+                // [{name, value}, ...] so downstream code has one thing to
+                // handle. Same for outputs.
+                let inputs: unknown[] = []
+                if (Array.isArray(raw.inputs)) {
+                    inputs = raw.inputs
+                } else if (raw.inputs && typeof raw.inputs === 'object') {
+                    inputs = Object.entries(raw.inputs as Record<string, unknown>).map(([key, val]) => ({ name: key, value: val }))
+                }
+                let outputs: unknown[] = []
+                if (Array.isArray(raw.outputs)) {
+                    outputs = raw.outputs
+                } else if (raw.outputs && typeof raw.outputs === 'object') {
+                    outputs = Object.entries(raw.outputs as Record<string, unknown>).map(([key, val]) => ({ name: key, value: val }))
                 }
 
                 nodes[name] = {
@@ -44,16 +71,23 @@ export class PlaceholderParser implements Parser {
                     name: (raw.name as string) ?? name,
                     label: (raw.label as string) || name,
                     location: { x, y },
-                    inputs: Array.isArray(raw.inputs) ? raw.inputs : [],
-                    outputs: Array.isArray(raw.outputs) ? raw.outputs : [],
+                    inputs,
+                    outputs,
                     properties: {},
                 }
 
-                // Gather extra properties (everything except known keys)
-                const knownKeys = new Set(['type', 'name', 'label', 'location', 'location_absolute', 'inputs', 'outputs', 'parent'])
+                // Gather extra properties (everything except known keys). Also
+                // unwrap a nested "settings" dict (AI-style) into properties
+                // so Color Ramp etc. become readable.
+                const knownKeys = new Set(['type', 'name', 'label', 'location', 'location_absolute', 'inputs', 'outputs', 'parent', 'settings'])
                 for (const [k, v] of Object.entries(raw)) {
                     if (!knownKeys.has(k)) {
                         nodes[name].properties[k] = v
+                    }
+                }
+                if (raw.settings && typeof raw.settings === 'object') {
+                    for (const [k, v] of Object.entries(raw.settings as Record<string, unknown>)) {
+                        if (!(k in nodes[name].properties)) nodes[name].properties[k] = v
                     }
                 }
                 if (raw.parent) {
@@ -61,14 +95,31 @@ export class PlaceholderParser implements Parser {
                 }
             }
 
-            // Links are full dicts: { from_node, from_socket, to_node, to_socket, ... }
-            const rawLinks = (data.links ?? []) as Array<Record<string, string>>
-            const links: NodeTree['links'] = rawLinks.map((l) => ({
-                fromNode: l.from_node ?? '',
-                fromSocket: l.from_socket ?? '',
-                toNode: l.to_node ?? '',
-                toSocket: l.to_socket ?? '',
-            }))
+            // Links can be either dicts ({from_node, from_socket, to_node, to_socket})
+            // OR string pairs (["NodeA.Out", "NodeB.In"]).
+            const rawLinks = (data.links ?? []) as unknown[]
+            const links: NodeTree['links'] = []
+            for (const l of rawLinks) {
+                if (Array.isArray(l) && l.length === 2 && typeof l[0] === 'string' && typeof l[1] === 'string') {
+                    const fromDot = l[0].lastIndexOf('.')
+                    const toDot = l[1].lastIndexOf('.')
+                    if (fromDot < 0 || toDot < 0) continue
+                    links.push({
+                        fromNode: l[0].substring(0, fromDot),
+                        fromSocket: l[0].substring(fromDot + 1),
+                        toNode: l[1].substring(0, toDot),
+                        toSocket: l[1].substring(toDot + 1),
+                    })
+                } else if (l && typeof l === 'object') {
+                    const obj = l as Record<string, string>
+                    links.push({
+                        fromNode: obj.from_node ?? obj.fromNode ?? '',
+                        fromSocket: obj.from_socket ?? obj.fromSocket ?? '',
+                        toNode: obj.to_node ?? obj.toNode ?? '',
+                        toSocket: obj.to_socket ?? obj.toSocket ?? '',
+                    })
+                }
+            }
 
             return { nodes, links }
         } catch {

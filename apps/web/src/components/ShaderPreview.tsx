@@ -88,18 +88,19 @@ export function ShaderPreview({ tree, size = 220, className = '' }: ShaderPrevie
                     '#include <fog_vertex>',
                     `#include <fog_vertex>\n${VERT_INJECTION_BODY}`,
                 )
-                // Fragment: prelude (varyings + noise libs + ramps) + inject
-                // into the lighting chunks. We use logic_phong_fragment? No -
-                // for MeshStandardMaterial we inject into the lights_physical
-                // chain. Simplest seam: rewrite diffuseColor/roughness/etc.
-                // before the lights run via map_fragment.
+                // Fragment: prelude (varyings + noise libs + ramps) injected
+                // right after <common>. The body has to land AFTER the chunks
+                // that declare the locals we set (diffuseColor, roughnessFactor,
+                // metalnessFactor, totalEmissiveRadiance) and BEFORE the
+                // lighting model consumes them. The right seam is just before
+                // <lights_physical_fragment>.
                 shader.fragmentShader = shader.fragmentShader.replace(
                     '#include <common>',
                     `#include <common>\n${glsl.fragmentPrelude}`,
                 )
                 shader.fragmentShader = shader.fragmentShader.replace(
-                    '#include <map_fragment>',
-                    `#include <map_fragment>\n${glsl.fragmentCallBody}`,
+                    '#include <lights_physical_fragment>',
+                    `${glsl.fragmentCallBody}\n#include <lights_physical_fragment>`,
                 )
             }
         }
