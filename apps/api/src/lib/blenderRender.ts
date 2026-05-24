@@ -17,6 +17,9 @@ const RENDER_SCRIPT = join(BUNDLED_PYTHON_DIR, 'render_cli.py')
 const CACHE_DIR = join(resolve(API_DIR, env.DATA_DIR), 'renders')
 
 const BLENDER_BIN = process.env.BLENDER_BIN ?? 'blender'
+// On headless Linux Eevee needs a GL context; xvfb-run provides a virtual
+// display. macOS/dev users have a real display so wrapping isn't needed.
+const USE_XVFB = process.env.BLENDER_USE_XVFB !== '0' && process.platform === 'linux'
 // Cap renders so a slow Cycles render or hung Blender process can't tie up
 // the API thread forever. Eevee renders typically finish in under 5s.
 const RENDER_TIMEOUT_MS = 60_000
@@ -84,14 +87,26 @@ export async function renderShader(jsonContent: string): Promise<{ png: Buffer; 
 
 function runBlender(inputPath: string, outputPath: string): Promise<void> {
     return new Promise((resolveOk, reject) => {
-        const proc = spawn(BLENDER_BIN, [
+        const blenderArgs = [
             '--background',
             '--factory-startup',
             '--python', RENDER_SCRIPT,
             '--',
             inputPath,
             outputPath,
-        ], { stdio: ['ignore', 'pipe', 'pipe'] })
+        ]
+        // xvfb-run wraps the command in a virtual display server so Eevee has
+        // a GL context. We use auto-servernum so concurrent renders don't
+        // collide on the same display.
+        const [bin, args] = USE_XVFB
+            ? ['xvfb-run', ['-a', '--server-args=-screen 0 800x600x24', BLENDER_BIN, ...blenderArgs]]
+            : [BLENDER_BIN, blenderArgs]
+        const proc = spawn(bin, args, {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            // Blender needs a writable HOME to read prefs / write config; the
+            // systemd unit has ProtectHome=true so we route to /tmp.
+            env: { ...process.env, HOME: process.env.HOME || '/tmp' },
+        })
 
         let stderr = ''
         proc.stderr.on('data', (c: Buffer) => { stderr += c.toString('utf8') })
