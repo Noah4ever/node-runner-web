@@ -48,28 +48,32 @@ def setup_scene(kind: str = "shader") -> None:
         bpy.data.objects.remove(obj, do_unlink=True)
 
     if kind == "geometry":
-        # A small plane gives the geometry-nodes modifier some input geometry
-        # without dominating the frame. Many trees start with their own
-        # primitive (mesh circle / curve primitive) and ignore plane input.
-        bpy.ops.mesh.primitive_plane_add(size=1)
+        # An ico sphere with subdivisions gives the modifier enough vertex
+        # density that deformation-style trees (SetPosition + noise) actually
+        # show something. Plane is too flat; cube too low-poly.
+        bpy.ops.mesh.primitive_ico_sphere_add(radius=1, subdivisions=4)
         base = bpy.context.active_object
         base.name = "PreviewBase"
+        bpy.ops.object.shade_smooth()
     else:
         bpy.ops.mesh.primitive_uv_sphere_add(radius=1, segments=64, ring_count=32)
         base = bpy.context.active_object
         base.name = "PreviewSphere"
         bpy.ops.object.shade_smooth()
 
-    # Camera - pulled back further for geometry since output extents vary.
+    # Camera - track-to-origin so we don't fight with euler angles.
+    import mathutils  # noqa: PLC0415 - bpy ships with this
     cam_data = bpy.data.cameras.new("Camera")
     cam_obj = bpy.data.objects.new("Camera", cam_data)
     scene.collection.objects.link(cam_obj)
     if kind == "geometry":
-        cam_obj.location = (5.5, -5.5, 4.5)
-        cam_obj.rotation_euler = (1.0, 0, 0.8)
+        cam_loc = mathutils.Vector((4, -4, 3))
     else:
-        cam_obj.location = (0, -3.2, 1.6)
-        cam_obj.rotation_euler = (1.1, 0, 0)
+        cam_loc = mathutils.Vector((0, -3.2, 1.6))
+    cam_obj.location = cam_loc
+    # Point at origin
+    direction = mathutils.Vector((0, 0, 0)) - cam_loc
+    cam_obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
     scene.camera = cam_obj
 
     # Key/fill/rim lights so PBR materials read cleanly at any roughness.
@@ -355,6 +359,31 @@ def build_geometry_modifier_group(tree: dict):
                         continue
             if out_node.inputs[0].is_linked:
                 break
+
+    # Make sure there's a NodeGroupInput connected to something that consumes
+    # geometry, so the modifier's input mesh (our plane base) actually flows
+    # through the tree.
+    in_node = next((n for n in group.nodes if n.bl_idname == "NodeGroupInput"), None)
+    if in_node is None:
+        try:
+            in_node = group.nodes.new("NodeGroupInput")
+            if group.nodes:
+                min_x = min((n.location[0] for n in group.nodes if n != in_node), default=0)
+                in_node.location = (min_x - 250, 0)
+        except Exception:
+            in_node = None
+
+    if in_node is not None and in_node.outputs:
+        for n in group.nodes:
+            if n == in_node or n == out_node:
+                continue
+            for sock in n.inputs:
+                if getattr(sock, "type", "") == "GEOMETRY" and not sock.is_linked:
+                    try:
+                        group.links.new(in_node.outputs[0], sock)
+                        break
+                    except Exception:
+                        continue
 
     return group
 
