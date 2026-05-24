@@ -115,18 +115,14 @@ def has_shader_nodes(tree: dict) -> bool:
 
 
 def has_geometry_nodes(tree: dict) -> bool:
-    """True when the tree is a geometry nodes setup - contains at least one
-    GeometryNode and a NodeGroupOutput (which is how Blender wires the result
-    back to the modifier)."""
-    has_geo = False
-    has_output = False
+    """True when the tree contains at least one GeometryNode - we accept tree
+    fragments without a NodeGroupOutput and synthesize one in
+    build_geometry_modifier_group if needed."""
     for data in (tree.get("nodes") or {}).values():
         t = (data or {}).get("type") or ""
         if t.startswith("GeometryNode"):
-            has_geo = True
-        if t == "NodeGroupOutput":
-            has_output = True
-    return has_geo and has_output
+            return True
+    return False
 
 
 def tree_kind(tree: dict) -> str:
@@ -314,17 +310,52 @@ def populate_node_tree(nt, tree: dict) -> None:
 
 def build_geometry_modifier_group(tree: dict):
     """Create a GeometryNodeTree group with the user's tree contents and
-    return it so the caller can attach it as a Geometry Nodes modifier."""
+    return it so the caller can attach it as a Geometry Nodes modifier.
+
+    If the tree didn't include a NodeGroupOutput (often because the user
+    exported a fragment, not the whole modifier), we synthesize one and wire
+    it to the first node we find with a Geometry-typed output."""
     group = bpy.data.node_groups.new("NodeRunnerGeoPreview", "GeometryNodeTree")
-    # Modifiers need declared interface sockets in 4.x. We declare a default
-    # Geometry in/out so the modifier wraps cleanly even if the tree's
-    # GroupInput/GroupOutput nodes have nothing yet.
+    # Modifiers need declared interface sockets in 4.x. Default Geometry in/out
+    # so the modifier wraps cleanly.
     try:
         group.interface.new_socket(name="Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
         group.interface.new_socket(name="Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
     except Exception:
         pass
     populate_node_tree(group, tree)
+
+    # Ensure there's a Group Output node connected to *something* that emits
+    # geometry, otherwise the modifier won't produce a result.
+    out_node = next((n for n in group.nodes if n.bl_idname == "NodeGroupOutput"), None)
+    if out_node is None:
+        try:
+            out_node = group.nodes.new("NodeGroupOutput")
+            # Position it to the right of the rightmost existing node so it
+            # doesn't overlap visually.
+            if group.nodes:
+                max_x = max((n.location[0] for n in group.nodes if n != out_node), default=0)
+                out_node.location = (max_x + 250, 0)
+        except Exception:
+            out_node = None
+
+    if out_node is not None and out_node.inputs and not out_node.inputs[0].is_linked:
+        # Look for any node that has a Geometry-typed output and link the
+        # first such output into the group output. Prefer SetPosition / Mesh
+        # / Set Material - those usually represent "final" geometry stages.
+        for n in group.nodes:
+            if n == out_node:
+                continue
+            for sock in n.outputs:
+                if getattr(sock, "type", "") == "GEOMETRY":
+                    try:
+                        group.links.new(sock, out_node.inputs[0])
+                        break
+                    except Exception:
+                        continue
+            if out_node.inputs[0].is_linked:
+                break
+
     return group
 
 
