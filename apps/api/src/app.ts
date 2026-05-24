@@ -11,6 +11,7 @@ import { shareRoutes } from './modules/share/routes.js'
 import { diffRoutes } from './modules/diff/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { nodeTypesRoutes } from './modules/nodeTypes/routes.js'
+import { renderRoutes } from './modules/render/routes.js'
 
 export async function buildApp() {
     const app = Fastify({
@@ -81,6 +82,7 @@ export async function buildApp() {
     await app.register(diffRoutes, { prefix: '/api/v1' })
     await app.register(authRoutes, { prefix: '/api/v1/auth' })
     await app.register(nodeTypesRoutes, { prefix: '/api/v1' })
+    await app.register(renderRoutes, { prefix: '/api/v1' })
 
     return app
 }

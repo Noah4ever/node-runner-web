@@ -8,6 +8,7 @@ import { UserAvatar } from '@/components/UserAvatar'
 import { InlineConvert } from '@/components/InlineConvert'
 import { CitationModal } from '@/components/CitationModal'
 import { ShaderPreview } from '@/components/ShaderPreview'
+import { HQRender } from '@/components/HQRender'
 import { LICENSE_INFO, type NodeLicense, type NodeTree, type NodeFormat } from '@node-runner/shared'
 
 interface ShareData {
@@ -245,6 +246,11 @@ export function SharedPage() {
                                 <ShaderPreview tree={page.tree} size={220} />
                             </div>
                         </div>
+                    )}
+
+                    {/* High-quality render via headless Blender on the server. */}
+                    {page.tree && (
+                        <HQRender content={page.content} format={page.format as NodeFormat} slug={page.slug} />
                     )}
 
                     {/* Metadata */}
