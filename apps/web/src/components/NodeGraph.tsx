@@ -6,18 +6,44 @@ import type { NodeTree } from '@node-runner/shared'
 const nodeTypes = {}
 const edgeTypes = {}
 
-// Blender-accurate node colors by category
-// NOTE: All shader-tree nodes start with "ShaderNode", so never match on "Shader" broadly.
-// Order matters - more specific checks must come before broader ones.
+// Blender-accurate node colors by category. Order matters - more specific
+// checks must come first. The Blender prefix (ShaderNode / GeometryNode /
+// CompositorNode / FunctionNode / TextureNode) is stripped before matching
+// so the same rules cover all tree types.
 function getNodeColor(type: string): string {
-    if (type.includes('Output')) return '#6e1818'
-    if (type.includes('Bsdf') || type.includes('MixShader') || type.includes('AddShader') || type.includes('Emission') || type.includes('Absorption') || type.includes('Scatter')) return '#2d5a27'
-    if (type.includes('Bump') || type.includes('Normal') || type.includes('Displacement') || type.includes('Mapping') || type.includes('VectorRotate') || type.includes('VectorMath') || type.includes('VectorCurve') || type.includes('Vector')) return '#573b7b'
-    if (type.includes('TexCoord')) return '#994040'
-    if (type.includes('Tex')) return '#b5631a'
-    if (type.includes('ValToRGB') || type.includes('ColorRamp') || type.includes('Math') || type.includes('MapRange') || type.includes('Clamp') || type.includes('Separate') || type.includes('Combine')) return '#3b6075'
-    if (type.includes('MixRGB') || type.includes('Hue') || type.includes('Bright') || type.includes('Gamma') || type.includes('Invert') || type.includes('RGBCurve') || type.includes('Mix')) return '#6e6e2d'
-    if (type.includes('Layer') || type.includes('Fresnel') || type.includes('RGB') || type.includes('Value') || type.includes('Wireframe') || type.includes('ObjectInfo') || type.includes('CameraData') || type.includes('LightPath') || type.includes('AmbientOcclusion')) return '#994040'
+    // Strip tree-type prefix so rules apply to shader/geometry/compositor alike
+    const t = type
+        .replace(/^ShaderNode/, '')
+        .replace(/^GeometryNode/, '')
+        .replace(/^CompositorNode/, '')
+        .replace(/^FunctionNode/, '')
+        .replace(/^TextureNode/, '')
+
+    // Group / I/O
+    if (t.includes('GroupInput') || t.includes('GroupOutput') || t === 'Group') return '#5a5a5a'
+    if (t.includes('Output')) return '#6e1818'
+
+    // Geometry-nodes-specific categories
+    if (t.includes('SetPosition') || t.includes('SetMaterial') || t.includes('SetShade') || t.includes('SetID') || t.includes('SetCurve') || t.includes('SetPoint') || t.includes('SetCorner') || t.includes('SetEdge') || t.includes('SetFace') || t.includes('SetSpline')) return '#3a5a7a'
+    if (t.includes('MeshPrimitive') || t.includes('CurvePrimitive') || t.includes('PointsToVertices') || t.includes('MeshToPoints') || t.includes('MeshToCurve') || t.includes('CurveToMesh') || t.includes('CurveToPoints') || t.includes('Instance') || t.includes('Realize')) return '#446677'
+    if (t.includes('Distribute') || t.includes('Scatter') || t.includes('Subdivide') || t.includes('Triangulate') || t.includes('Extrude') || t.includes('Bevel') || t.includes('Boolean') || t.includes('Delete') || t.includes('Duplicate') || t.includes('Merge') || t.includes('Flip') || t.includes('Fillet') || t.includes('Resample') || t.includes('Trim') || t.includes('Reverse') || t.includes('Smooth')) return '#3d6b3d'
+    if (t.includes('CaptureAttribute') || t.includes('StoreAttribute') || t.includes('RemoveAttribute') || t.includes('NamedAttribute') || t.includes('Attribute')) return '#7b5a3b'
+    if (t.includes('FieldAtIndex') || t.includes('FieldOnDomain') || t.includes('Index') || t.includes('Position') || t.includes('Normal') || t.includes('Radius') || t.includes('Random') || t.includes('Domain')) return '#5d5d7b'
+    if (t.includes('Repeat') || t.includes('Simulation') || t.includes('ForEach') || t.includes('Switch') || t.includes('Compare') || t.includes('Menu')) return '#7b4a6b'
+
+    // Shader-tree groupings
+    if (t.includes('Bsdf') || t.includes('MixShader') || t.includes('AddShader') || t.includes('Emission') || t.includes('Absorption') || t.includes('Volume') || t.includes('Holdout') || t.includes('Background')) return '#2d5a27'
+    if (t.includes('Bump') || t.includes('Displacement') || t.includes('Mapping') || t.includes('VectorRotate') || t.includes('VectorMath') || t.includes('VectorCurve') || t.includes('VectorTransform') || t.includes('Vector')) return '#573b7b'
+    if (t.includes('TexCoord')) return '#994040'
+    if (t.includes('Tex') && !t.includes('Coordinate')) return '#b5631a'
+    if (t.includes('ValToRGB') || t.includes('ColorRamp') || t.includes('Math') || t.includes('MapRange') || t.includes('Clamp') || t.includes('Separate') || t.includes('Combine')) return '#3b6075'
+    if (t.includes('MixRGB') || t.includes('Hue') || t.includes('Bright') || t.includes('Gamma') || t.includes('Invert') || t.includes('RGBCurve') || t.includes('Mix')) return '#6e6e2d'
+    if (t.includes('Layer') || t.includes('Fresnel') || t.includes('RGB') || t.includes('Value') || t.includes('Wireframe') || t.includes('ObjectInfo') || t.includes('CameraData') || t.includes('LightPath') || t.includes('AmbientOcclusion') || t.includes('Tangent')) return '#994040'
+
+    // Compositor-specific
+    if (t.includes('Filter') || t.includes('Blur') || t.includes('Glare') || t.includes('SunBeams') || t.includes('LensDistortion')) return '#5a4e7a'
+    if (t.includes('Mask') || t.includes('Alpha') || t.includes('Keying') || t.includes('ColorSpill') || t.includes('Despeckle')) return '#7b6f3b'
+
     return '#4a4a4a'
 }
 
@@ -35,9 +61,13 @@ interface NodeGraphProps {
     className?: string
     // Compact = no controls/minimap (used for thumbnail previews in cards)
     compact?: boolean
+    // Fires when the user clicks a node. Receives the node name (which equals the
+    // key in tree.nodes). Pass undefined to disable click handling.
+    onNodeClick?: (name: string | null) => void
+    selectedNode?: string | null
 }
 
-export function NodeGraph({ tree, className = '', compact = false }: NodeGraphProps) {
+export function NodeGraph({ tree, className = '', compact = false, onNodeClick, selectedNode }: NodeGraphProps) {
     const [miniMapOpen, setMiniMapOpen] = useState(true)
     const { nodes, edges } = useMemo(() => {
         const entries = Object.entries(tree.nodes)
@@ -71,11 +101,13 @@ export function NodeGraph({ tree, className = '', compact = false }: NodeGraphPr
                 },
                 style: {
                     background: getNodeColor(data.type),
-                    border: '1px solid #555',
+                    border: selectedNode === name ? '2px solid #fff' : '1px solid #555',
+                    boxShadow: selectedNode === name ? '0 0 0 3px rgba(255,180,0,0.35)' : undefined,
                     borderRadius: '4px',
                     padding: '6px 10px',
                     minWidth: '120px',
                     fontSize: '10px',
+                    cursor: onNodeClick ? 'pointer' : 'default',
                 },
             }
         })
@@ -91,7 +123,7 @@ export function NodeGraph({ tree, className = '', compact = false }: NodeGraphPr
         }))
 
         return { nodes: flowNodes, edges: flowEdges }
-    }, [tree])
+    }, [tree, selectedNode, onNodeClick])
 
     if (nodes.length === 0) {
         return (
@@ -122,6 +154,8 @@ export function NodeGraph({ tree, className = '', compact = false }: NodeGraphPr
                 zoomOnScroll
                 zoomOnPinch
                 zoomOnDoubleClick={!compact}
+                onNodeClick={onNodeClick ? (_e, node) => onNodeClick(node.id) : undefined}
+                onPaneClick={onNodeClick ? () => onNodeClick(null) : undefined}
             >
                 <Background color="#222" gap={20} size={1} />
                 {!compact && (

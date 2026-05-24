@@ -179,6 +179,47 @@ export async function pythonConvert(
   })
 }
 
+export interface SocketNames {
+  inputs: Record<string, string[]>
+  outputs: Record<string, string[]>
+}
+
+// Runs sockets_cli.py and returns the INPUT_NAMES / OUTPUT_NAMES tables from
+// the upstream node_runner Python package. Used by /api/v1/node-types/sockets.
+export async function fetchSocketNames(): Promise<SocketNames> {
+  const pythonRoot = await resolvePythonPath()
+  const script = join(BUNDLED_PYTHON_DIR, 'sockets_cli.py')
+
+  return new Promise<SocketNames>((resolveOk, reject) => {
+    const proc = spawn('python3', [script], {
+      env: { ...process.env, NODE_RUNNER_PYTHON_PATH: pythonRoot },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (c: Buffer) => { stdout += c.toString('utf8') })
+    proc.stderr.on('data', (c: Buffer) => { stderr += c.toString('utf8') })
+    proc.on('error', (err) => {
+      const msg = (err as NodeJS.ErrnoException).code === 'ENOENT'
+        ? 'python3 is not installed or not on PATH.'
+        : `Failed to spawn python3: ${err.message}`
+      reject(new PythonConverterError(msg))
+    })
+    proc.on('close', (code) => {
+      if (!stdout) return reject(new PythonConverterError(`sockets_cli returned no output (exit ${code})`, stderr))
+      try {
+        const parsed = JSON.parse(stdout) as
+          | { ok: true; inputs: Record<string, string[]>; outputs: Record<string, string[]> }
+          | { ok: false; error: string }
+        if (!parsed.ok) return reject(new PythonConverterError(parsed.error, stderr))
+        resolveOk({ inputs: parsed.inputs, outputs: parsed.outputs })
+      } catch (e) {
+        reject(new PythonConverterError(`Failed to parse sockets_cli output: ${(e as Error).message}`, stderr))
+      }
+    })
+  })
+}
+
 // Returns metadata about which source the converter resolved to. Useful for
 // the API to expose in /health or surface in convert responses.
 export async function describeConverter(): Promise<{ source: 'env' | 'local' | 'cache'; path: string }> {

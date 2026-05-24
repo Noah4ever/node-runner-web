@@ -171,4 +171,9 @@ export const api = {
     }),
 
   logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
+
+  socketNames: () =>
+    request<{ inputs: Record<string, string[]>; outputs: Record<string, string[]> }>(
+      '/node-types/sockets',
+    ),
 }

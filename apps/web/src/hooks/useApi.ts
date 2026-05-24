@@ -3,6 +3,17 @@ import { api } from '@/lib/api'
 import { useNodeStore, useAuthStore } from '@/stores/nodeStore'
 import type { NodeFormat, NodeTree } from '@node-runner/shared'
 
+// Socket names: tiny (~4 KB), changes only when the upstream Python package
+// updates. Long stale time keeps it in cache across pages.
+export function useSocketNames() {
+    return useQuery({
+        queryKey: ['node-types', 'sockets'],
+        queryFn: () => api.socketNames(),
+        staleTime: 1000 * 60 * 60, // 1 hour
+        gcTime: 1000 * 60 * 60 * 24,
+    })
+}
+
 export function useDetectFormat() {
     const { setDetectedFormat } = useNodeStore()
 

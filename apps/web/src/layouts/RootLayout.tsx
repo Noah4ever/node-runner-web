@@ -3,15 +3,25 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/nodeStore'
 import { useAuth } from '@/hooks/useApi'
 
-// Logo: two connected nodes - flat geometric, not generative-looking.
+// Official Node Runner logo - same mark as the og-image and favicon.
+// Inline SVG so it scales crisply at any size and inherits theme via the
+// gradient defined once per render.
 function NodeLogo({ className = '' }: { className?: string }) {
     return (
-        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="2" y="8" width="6" height="8" rx="1" />
-            <rect x="16" y="4" width="6" height="8" rx="1" />
-            <rect x="16" y="14" width="6" height="6" rx="1" />
-            <path d="M8 11 L16 7" />
-            <path d="M8 13 L16 17" />
+        <svg className={className} viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <defs>
+                <linearGradient id="nr-logo-grad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#fbbf24" />
+                    <stop offset="100%" stopColor="#ea580c" />
+                </linearGradient>
+            </defs>
+            <polygon points="14,32 50,12 50,52" fill="url(#nr-logo-grad)" fillOpacity={0.35} />
+            <line x1="14" y1="32" x2="50" y2="12" stroke="url(#nr-logo-grad)" strokeWidth={3} strokeLinecap="round" />
+            <line x1="50" y1="12" x2="50" y2="52" stroke="url(#nr-logo-grad)" strokeWidth={3} strokeLinecap="round" />
+            <line x1="50" y1="52" x2="14" y2="32" stroke="url(#nr-logo-grad)" strokeWidth={3} strokeLinecap="round" />
+            <circle cx="14" cy="32" r="6" fill="url(#nr-logo-grad)" />
+            <circle cx="50" cy="12" r="7.5" fill="url(#nr-logo-grad)" />
+            <circle cx="50" cy="52" r="6" fill="url(#nr-logo-grad)" />
         </svg>
     )
 }
@@ -69,7 +79,7 @@ export function RootLayout() {
                 <nav className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4 sm:px-6">
                     {/* Brand */}
                     <Link to="/" className="flex items-center gap-2 shrink-0 text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors">
-                        <NodeLogo className="h-6 w-6 text-[var(--color-accent)]" />
+                        <NodeLogo className="h-6 w-6" />
                         <span className="text-lg font-bold tracking-tight">Node Runner</span>
                     </Link>
 

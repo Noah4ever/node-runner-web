@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useNodeStore } from '@/stores/nodeStore'
 import { api } from '@/lib/api'
 import { NodeGraph } from '@/components/NodeGraph'
+import { NodeInspector } from '@/components/NodeInspector'
 import { FORMAT_LABELS, type NodeFormat } from '@node-runner/shared'
 import type { NodeTree } from '@node-runner/shared'
 
@@ -16,6 +17,7 @@ export function ViewerPage() {
     const [format, setFormat] = useState<NodeFormat | null>(null)
     const [nodeCount, setNodeCount] = useState(0)
     const [linkCount, setLinkCount] = useState(0)
+    const [selectedNode, setSelectedNode] = useState<string | null>(null)
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
 
     const trigger = useCallback((value: string) => {
@@ -84,7 +86,7 @@ export function ViewerPage() {
                 </button>
             </div>
 
-            <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.5fr]">
+            <div className={`mt-6 grid gap-6 ${selectedNode && tree ? 'lg:grid-cols-[1fr_1.5fr_18rem]' : 'lg:grid-cols-[1fr_1.5fr]'}`}>
                 {/* Input column */}
                 <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -132,7 +134,12 @@ export function ViewerPage() {
                 {/* Graph preview */}
                 <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden" style={{ height: '480px' }}>
                     {tree && Object.keys(tree.nodes).length > 0 ? (
-                        <NodeGraph tree={tree} className="h-full w-full" />
+                        <NodeGraph
+                            tree={tree}
+                            className="h-full w-full"
+                            onNodeClick={(name) => setSelectedNode(name)}
+                            selectedNode={selectedNode}
+                        />
                     ) : (
                         <div className="flex h-full items-center justify-center p-8">
                             <p className="text-sm text-[var(--color-text-faint)] text-center">
@@ -141,7 +148,37 @@ export function ViewerPage() {
                         </div>
                     )}
                 </div>
+
+                {/* Inspector panel - desktop sidebar, mobile drawer */}
+                {selectedNode && tree && (
+                    <NodeInspector
+                        tree={tree}
+                        nodeName={selectedNode}
+                        onClose={() => setSelectedNode(null)}
+                        onSelect={(n) => setSelectedNode(n)}
+                        className="h-[480px] hidden lg:flex"
+                    />
+                )}
             </div>
+
+            {/* Mobile / tablet inspector: full-width below graph */}
+            {selectedNode && tree && (
+                <div className="mt-4 lg:hidden">
+                    <NodeInspector
+                        tree={tree}
+                        nodeName={selectedNode}
+                        onClose={() => setSelectedNode(null)}
+                        onSelect={(n) => setSelectedNode(n)}
+                        className="max-h-[480px]"
+                    />
+                </div>
+            )}
+
+            {tree && Object.keys(tree.nodes).length > 0 && !selectedNode && (
+                <p className="mt-3 text-xs text-[var(--color-text-faint)]">
+                    Tip: click any node in the graph to see its inputs, outputs and properties.
+                </p>
+            )}
         </div>
     )
 }
