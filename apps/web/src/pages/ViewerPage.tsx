@@ -111,17 +111,19 @@ export function ViewerPage() {
     }
 
     // Re-encode the edited tree back into the original format and write it to
-    // the source textarea. We always pipe via JSON because the python encoder
-    // takes a {nodes, links} dict and emits any target format.
+    // the source textarea. We always pipe via JSON + the python converter
+    // (even json -> json) so it normalizes the JS/API shape into Python's
+    // shape with snake_case links and [x,y] locations. Without that the
+    // round-trip would still write JS-shape JSON to the textarea, which
+    // re-encoding to hash/xml later would choke on.
     async function applyEdits() {
         if (!tree || !format) return
         setApplying(true)
         setApplyError(null)
         try {
             const jsonContent = JSON.stringify({ nodes: tree.nodes, links: tree.links })
-            const result = format === 'json'
-                ? { output: jsonContent }
-                : await api.convert(jsonContent, format, 'json')
+            const target: NodeFormat = format
+            const result = await api.convert(jsonContent, target, 'json')
             setInput(result.output)
             setRawInput(result.output)
             setDirty(false)

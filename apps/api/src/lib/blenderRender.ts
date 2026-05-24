@@ -35,7 +35,7 @@ export class RenderError extends Error {
 
 export class NoShaderError extends RenderError {
     constructor() {
-        super('This tree has no shader nodes - nothing to render on a sphere.')
+        super('This tree has nothing renderable - no material output, BSDF, or geometry-nodes group output found.')
         this.name = 'NoShaderError'
     }
 }

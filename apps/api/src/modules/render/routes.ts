@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { fail } from '../../lib/response.js'
 import { renderShader, RenderError, NoShaderError } from '../../lib/blenderRender.js'
 import { pythonConvert, type NodeFormat } from '../../lib/pythonConverter.js'
+import { getUserFromRequest } from '../auth/routes.js'
 
 const renderRequestSchema = z.object({
     // Either supply raw JSON content directly, or a content+format pair we'll
@@ -38,6 +39,8 @@ export const renderRoutes: FastifyPluginAsync = async (app) => {
         }
 
         const { content, format } = parsed.data
+        const user = getUserFromRequest(request)
+        const isAdmin = !!user?.isAdmin
 
         // Normalize to JSON for the renderer - it expects a {nodes, links} dict.
         let jsonContent: string
@@ -54,17 +57,19 @@ export const renderRoutes: FastifyPluginAsync = async (app) => {
 
         try {
             const { png, cached, hash } = await renderShader(jsonContent)
-            if (!cached && !checkBucket(request.ip)) {
-                // Reject the request *after* render only if it wasn't a cache hit;
-                // doing this before would block cached requests too.
-                // We still return the rendered PNG since we already spent the work,
-                // but flag it via header for client awareness.
-                reply.header('X-Render-Quota', 'exceeded')
+            // Admins bypass the quota entirely; others get budgeted, cache
+            // hits always free. Charge happens AFTER the render so we don't
+            // accept a quota miss only to then fail on render.
+            if (!cached && !isAdmin) {
+                if (!checkBucket(request.ip)) {
+                    reply.header('X-Render-Quota', 'exceeded')
+                }
             }
             reply
                 .header('Content-Type', 'image/png')
                 .header('X-Render-Cached', cached ? '1' : '0')
                 .header('X-Render-Hash', hash)
+                .header('X-Render-Admin', isAdmin ? '1' : '0')
                 .header('Cache-Control', 'public, max-age=3600')
             return reply.send(png)
         } catch (err) {
@@ -79,15 +84,19 @@ export const renderRoutes: FastifyPluginAsync = async (app) => {
         }
     })
 
-    // Quota check endpoint so the UI can disable the button preemptively.
+    // Quota check so the UI can show used/limit + reset time. Admins get a
+    // sentinel `unlimited: true` instead of a numeric budget.
     app.get('/render/quota', async (request, reply) => {
+        reply.header('Cache-Control', 'no-store')
+        const user = getUserFromRequest(request)
+        if (user?.isAdmin) {
+            return reply.send({ success: true, data: { unlimited: true, used: 0, limit: 0, resetAt: 0 } })
+        }
         const now = Date.now()
         const b = buckets.get(request.ip)
         if (!b || now > b.resetAt) {
-            reply.header('Cache-Control', 'no-store')
-            return reply.send({ success: true, data: { used: 0, limit: LIMIT, resetAt: now + WINDOW_MS } })
+            return reply.send({ success: true, data: { unlimited: false, used: 0, limit: LIMIT, resetAt: now + WINDOW_MS } })
         }
-        reply.header('Cache-Control', 'no-store')
-        return reply.send({ success: true, data: { used: b.count, limit: LIMIT, resetAt: b.resetAt } })
+        return reply.send({ success: true, data: { unlimited: false, used: b.count, limit: LIMIT, resetAt: b.resetAt } })
     })
 }

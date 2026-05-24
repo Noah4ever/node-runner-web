@@ -14,6 +14,15 @@ export function useSocketNames() {
     })
 }
 
+// Render quota: refreshed on demand by HQRender after a successful render.
+export function useRenderQuota() {
+    return useQuery({
+        queryKey: ['render', 'quota'],
+        queryFn: () => api.renderQuota(),
+        staleTime: 10_000,
+    })
+}
+
 export function useDetectFormat() {
     const { setDetectedFormat } = useNodeStore()
 

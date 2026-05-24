@@ -38,26 +38,38 @@ def parse_argv() -> tuple[str, str]:
     return args[0], args[1]
 
 
-def setup_scene() -> None:
-    """Clear the default cube, drop in a smooth UV sphere, sane camera + lights."""
+def setup_scene(kind: str = "shader") -> None:
+    """Clear defaults, drop in the base object appropriate to the tree kind,
+    add camera + three-light setup."""
     scene = bpy.context.scene
 
     # Wipe default objects so we start clean.
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
 
-    # Sphere
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, segments=64, ring_count=32)
-    sphere = bpy.context.active_object
-    sphere.name = "PreviewSphere"
-    bpy.ops.object.shade_smooth()
+    if kind == "geometry":
+        # A small plane gives the geometry-nodes modifier some input geometry
+        # without dominating the frame. Many trees start with their own
+        # primitive (mesh circle / curve primitive) and ignore plane input.
+        bpy.ops.mesh.primitive_plane_add(size=1)
+        base = bpy.context.active_object
+        base.name = "PreviewBase"
+    else:
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=1, segments=64, ring_count=32)
+        base = bpy.context.active_object
+        base.name = "PreviewSphere"
+        bpy.ops.object.shade_smooth()
 
-    # Camera
+    # Camera - pulled back further for geometry since output extents vary.
     cam_data = bpy.data.cameras.new("Camera")
     cam_obj = bpy.data.objects.new("Camera", cam_data)
     scene.collection.objects.link(cam_obj)
-    cam_obj.location = (0, -3.2, 1.6)
-    cam_obj.rotation_euler = (1.1, 0, 0)
+    if kind == "geometry":
+        cam_obj.location = (5.5, -5.5, 4.5)
+        cam_obj.rotation_euler = (1.0, 0, 0.8)
+    else:
+        cam_obj.location = (0, -3.2, 1.6)
+        cam_obj.rotation_euler = (1.1, 0, 0)
     scene.camera = cam_obj
 
     # Key/fill/rim lights so PBR materials read cleanly at any roughness.
@@ -100,6 +112,30 @@ def has_shader_nodes(tree: dict) -> bool:
         if "Bsdf" in t or t in ("ShaderNodeEmission", "ShaderNodeBackground", "ShaderNodeHoldout"):
             return True
     return False
+
+
+def has_geometry_nodes(tree: dict) -> bool:
+    """True when the tree is a geometry nodes setup - contains at least one
+    GeometryNode and a NodeGroupOutput (which is how Blender wires the result
+    back to the modifier)."""
+    has_geo = False
+    has_output = False
+    for data in (tree.get("nodes") or {}).values():
+        t = (data or {}).get("type") or ""
+        if t.startswith("GeometryNode"):
+            has_geo = True
+        if t == "NodeGroupOutput":
+            has_output = True
+    return has_geo and has_output
+
+
+def tree_kind(tree: dict) -> str:
+    """One of: 'shader', 'geometry', or 'none'."""
+    if has_shader_nodes(tree):
+        return "shader"
+    if has_geometry_nodes(tree):
+        return "geometry"
+    return "none"
 
 
 def build_material(tree: dict) -> "bpy.types.Material":
@@ -203,6 +239,95 @@ def build_material(tree: dict) -> "bpy.types.Material":
     return mat
 
 
+def populate_node_tree(nt, tree: dict) -> None:
+    """Shared node-builder for any bpy.types.NodeTree (shader or geometry).
+    Idempotent for the caller: nt is mutated in place; node_map is local."""
+    node_map: dict = {}
+
+    for name, data in (tree.get("nodes") or {}).items():
+        node_type = data.get("type")
+        if not node_type:
+            continue
+        try:
+            n = nt.nodes.new(node_type)
+        except Exception:
+            continue
+        n.name = name
+        loc = data.get("location") or [0, 0]
+        if isinstance(loc, dict):
+            loc = [loc.get("x", 0), loc.get("y", 0)]
+        try:
+            n.location = (float(loc[0]) if len(loc) > 0 else 0,
+                          float(loc[1]) if len(loc) > 1 else 0)
+        except Exception:
+            pass
+
+        for i, entry in enumerate(data.get("inputs", []) or []):
+            if isinstance(entry, dict) and "value" in entry:
+                value = entry.get("value")
+                sock_name = entry.get("name")
+            else:
+                value = entry
+                sock_name = None
+            if value is None:
+                continue
+            sock = None
+            if sock_name:
+                sock = n.inputs.get(sock_name)
+            if sock is None and i < len(n.inputs) and sock_name is None:
+                sock = n.inputs[i]
+            if sock is None:
+                continue
+            try:
+                sock.default_value = value
+            except Exception:
+                continue
+
+        for key, value in (data.get("properties") or {}).items():
+            if key in {
+                "color", "height", "hide", "internal_links", "is_active_output",
+                "label", "location", "mute", "name", "parent", "select",
+                "show_options", "show_preview", "show_texture", "target", "type",
+                "use_custom_color", "width", "width_hidden",
+            }:
+                continue
+            try:
+                setattr(n, key, value)
+            except Exception:
+                continue
+
+        node_map[name] = n
+
+    for link in (tree.get("links") or []):
+        fn = node_map.get(link.get("fromNode"))
+        tn = node_map.get(link.get("toNode"))
+        if fn is None or tn is None:
+            continue
+        try:
+            fs = fn.outputs.get(link.get("fromSocket")) or (fn.outputs[0] if fn.outputs else None)
+            ts = tn.inputs.get(link.get("toSocket")) or (tn.inputs[0] if tn.inputs else None)
+            if fs and ts:
+                nt.links.new(fs, ts)
+        except Exception:
+            continue
+
+
+def build_geometry_modifier_group(tree: dict):
+    """Create a GeometryNodeTree group with the user's tree contents and
+    return it so the caller can attach it as a Geometry Nodes modifier."""
+    group = bpy.data.node_groups.new("NodeRunnerGeoPreview", "GeometryNodeTree")
+    # Modifiers need declared interface sockets in 4.x. We declare a default
+    # Geometry in/out so the modifier wraps cleanly even if the tree's
+    # GroupInput/GroupOutput nodes have nothing yet.
+    try:
+        group.interface.new_socket(name="Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+        group.interface.new_socket(name="Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    except Exception:
+        pass
+    populate_node_tree(group, tree)
+    return group
+
+
 def main() -> int:
     input_path, output_path = parse_argv()
 
@@ -213,19 +338,35 @@ def main() -> int:
         sys.stderr.write(f"failed to read input: {exc}\n")
         return 3
 
-    if not has_shader_nodes(tree):
-        sys.stderr.write("NO_SHADER_NODES\n")
+    kind = tree_kind(tree)
+    if kind == "none":
+        sys.stderr.write("NO_RENDERABLE\n")
         return 6
 
     try:
-        setup_scene()
-        mat = build_material(tree)
-        sphere = bpy.data.objects.get("PreviewSphere")
-        if sphere is None:
-            sys.stderr.write("PreviewSphere missing after setup\n")
-            return 4
-        sphere.data.materials.clear()
-        sphere.data.materials.append(mat)
+        setup_scene(kind)
+        if kind == "shader":
+            mat = build_material(tree)
+            base = bpy.data.objects.get("PreviewSphere")
+            if base is None:
+                sys.stderr.write("PreviewSphere missing after setup\n")
+                return 4
+            base.data.materials.clear()
+            base.data.materials.append(mat)
+        elif kind == "geometry":
+            base = bpy.data.objects.get("PreviewBase")
+            if base is None:
+                sys.stderr.write("PreviewBase missing after setup\n")
+                return 4
+            group = build_geometry_modifier_group(tree)
+            mod = base.modifiers.new("NodeRunnerPreview", type="NODES")
+            mod.node_group = group
+            # Give the geometry a default surface so it shows up shaded even
+            # when the tree didn't include a Set Material node.
+            fallback_mat = bpy.data.materials.new("NodeRunnerGeoFallback")
+            fallback_mat.use_nodes = True
+            base.data.materials.clear()
+            base.data.materials.append(fallback_mat)
 
         scene = bpy.context.scene
         scene.render.filepath = output_path

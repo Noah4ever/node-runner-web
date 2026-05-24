@@ -178,4 +178,9 @@ export const api = {
     request<{ inputs: Record<string, string[]>; outputs: Record<string, string[]> }>(
       '/node-types/sockets',
     ),
+
+  renderQuota: () =>
+    request<{ unlimited: boolean; used: number; limit: number; resetAt: number }>(
+      '/render/quota',
+    ),
 }
