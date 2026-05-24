@@ -14,22 +14,22 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync, statSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join, resolve } from 'node:path'
 import { env } from './env.js'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-// apps/api/src/lib → apps/api
-const API_DIR = resolve(__dirname, '..', '..')
-const WORKSPACE_ROOT = resolve(API_DIR, '..', '..', '..')
-const LOCAL_NODE_RUNNER = join(WORKSPACE_ROOT, 'node_runner')
+// All paths anchor on process.cwd() which is the API root in both dev
+// (tsx runs from apps/api) and prod (systemd WorkingDirectory=apps/api). This
+// matches persist.ts's convention and avoids the __dirname trap where compiled
+// (apps/api/lib/) and source (apps/api/src/lib/) layouts differ by one level.
+const API_DIR = process.cwd()
+const LOCAL_NODE_RUNNER = resolve(API_DIR, '..', '..', '..', 'node_runner')
 const BUNDLED_PYTHON_DIR = join(API_DIR, 'python')
 const VENDOR_DIR = join(BUNDLED_PYTHON_DIR, 'vendor')
 const CACHE_DIR = join(resolve(API_DIR, env.DATA_DIR), 'python', 'node_runner')
 
-const GITHUB_RAW = 'https://raw.githubusercontent.com/Noah4ever/node_runner/main/node_runner'
+// Upstream repo has the Python files at the repo root (encoding.py, not
+// node_runner/encoding.py) - the repo *is* the package.
+const GITHUB_RAW = 'https://raw.githubusercontent.com/Noah4ever/node_runner/main'
 const REQUIRED_FILES = ['encoding.py', 'node_data.py', 'constants.py']
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 // refresh from GitHub at most daily
 
