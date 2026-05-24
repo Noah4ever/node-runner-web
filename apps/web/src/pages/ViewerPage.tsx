@@ -57,7 +57,15 @@ export function ViewerPage() {
     const [applying, setApplying] = useState(false)
     const [applyError, setApplyError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
+    const [sidebarTab, setSidebarTab] = useState<'preview' | 'render' | 'inspector' | 'source'>('preview')
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+    // Auto-switch to the inspector tab when a node is selected; flip back to
+    // preview when it's cleared so the user isn't stuck on an empty inspector.
+    useEffect(() => {
+        if (selectedNode) setSidebarTab('inspector')
+        else if (sidebarTab === 'inspector') setSidebarTab('preview')
+    }, [selectedNode]) // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (!graphFullscreen) return
@@ -165,14 +173,110 @@ export function ViewerPage() {
     const hasInput = input.trim().length > 0
     const isValid = tree !== null && Object.keys(tree.nodes).length > 0
 
+    // ---- sidebar tab content ----
+    // Pulled out so the JSX for the desktop layout below stays scannable.
+    const sidebarPanels = (
+        <>
+            {sidebarTab === 'preview' && (
+                <div className="p-3">
+                    {tree ? (
+                        <div className="flex justify-center">
+                            <ShaderPreview tree={tree} size={260} />
+                        </div>
+                    ) : (
+                        <p className="text-xs text-[var(--color-text-faint)] text-center py-8">Paste a tree to see the preview.</p>
+                    )}
+                </div>
+            )}
+            {sidebarTab === 'render' && (
+                <div className="p-3">
+                    {tree && format ? (
+                        <HQRender content={input} format={format} slug={dirty ? 'editor-draft' : 'editor'} />
+                    ) : (
+                        <p className="text-xs text-[var(--color-text-faint)] text-center py-8">Paste a tree to enable HQ render.</p>
+                    )}
+                </div>
+            )}
+            {sidebarTab === 'inspector' && selectedNode && tree && (
+                <NodeInspector
+                    tree={tree}
+                    nodeName={selectedNode}
+                    onClose={() => setSelectedNode(null)}
+                    onSelect={(n) => setSelectedNode(n)}
+                    editable
+                    onInputChange={handleInputChange}
+                    onPropertyChange={handlePropertyChange}
+                    className="h-full border-0 rounded-none"
+                />
+            )}
+            {sidebarTab === 'source' && (
+                <div className="p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-end gap-1.5">
+                        <button
+                            type="button"
+                            onClick={handleCopy}
+                            disabled={!input.trim()}
+                            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${copied ? 'border-green-500/40 text-green-400' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)]'}`}
+                        >
+                            {copied ? 'Copied' : 'Copy'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handlePaste}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)] cursor-pointer transition-colors"
+                        >
+                            Paste
+                        </button>
+                    </div>
+                    <textarea
+                        id="viewer-input"
+                        value={input}
+                        onChange={(e) => { setInput(e.target.value); trigger(e.target.value) }}
+                        placeholder="Paste Hash, JSON, XML, or AI JSON node data…"
+                        spellCheck={false}
+                        className="flex-1 min-h-[260px] w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)] focus:outline-none resize-none"
+                    />
+                    {hasInput && (
+                        <div className="flex flex-wrap gap-1.5 text-[10px]">
+                            {format && (
+                                <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">
+                                    {FORMAT_LABELS[format]}
+                                </span>
+                            )}
+                            <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">{nodeCount} nodes</span>
+                            <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">{linkCount} links</span>
+                            <span className={`rounded border px-2 py-0.5 font-semibold ${isValid ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+                                {isValid ? 'valid' : 'invalid'}
+                            </span>
+                        </div>
+                    )}
+                </div>
+            )}
+        </>
+    )
+
+    const TabBtn = ({ id, label, disabled = false }: { id: typeof sidebarTab; label: string; disabled?: boolean }) => (
+        <button
+            type="button"
+            onClick={() => setSidebarTab(id)}
+            disabled={disabled}
+            className={`flex-1 px-2 py-2 text-xs font-medium border-b-2 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${sidebarTab === id ? 'text-[var(--color-text)] border-[var(--color-accent)]' : 'text-[var(--color-text-muted)] border-transparent hover:text-[var(--color-text)]'}`}
+        >
+            {label}
+        </button>
+    )
+
     return (
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
-            <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
-                <div>
-                    <h1 className="text-2xl font-bold">Editor</h1>
-                    <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                        Paste any node tree and see it rendered. Nothing is uploaded unless you publish.
-                    </p>
+        <div className="flex flex-col h-[calc(100vh-3.5rem)] px-3 sm:px-4 py-3">
+            {/* Compact header: title + actions on one line. */}
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2 shrink-0">
+                <div className="flex items-baseline gap-3">
+                    <h1 className="text-xl font-bold">Editor</h1>
+                    {hasInput && format && (
+                        <span className="text-xs text-[var(--color-text-faint)] hidden sm:inline">
+                            {FORMAT_LABELS[format]} &middot; {nodeCount} nodes &middot; {linkCount} links
+                        </span>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
                     {dirty && (
@@ -199,88 +303,10 @@ export function ViewerPage() {
                 </div>
             </div>
 
-            <div className={`mt-6 grid gap-6 ${selectedNode && tree ? 'lg:grid-cols-[1fr_1.5fr_18rem]' : 'lg:grid-cols-[1fr_1.5fr]'}`}>
-                {/* Input column */}
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                        <label htmlFor="viewer-input" className="text-sm font-medium">Node tree data</label>
-                        <div className="flex items-center gap-1.5">
-                            <button
-                                type="button"
-                                onClick={handleCopy}
-                                disabled={!input.trim()}
-                                title="Copy the current node tree to the clipboard"
-                                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${copied ? 'border-green-500/40 text-green-400' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)]'}`}
-                            >
-                                {copied ? (
-                                    <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>
-                                ) : (
-                                    <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>Copy</>
-                                )}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handlePaste}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)] cursor-pointer transition-colors"
-                            >
-                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2m8 0v4H8V4m8 0a2 2 0 00-2-2h-4a2 2 0 00-2 2" /></svg>
-                                Paste
-                            </button>
-                        </div>
-                    </div>
-                    <textarea
-                        id="viewer-input"
-                        value={input}
-                        onChange={(e) => { setInput(e.target.value); trigger(e.target.value) }}
-                        placeholder="Paste Hash, JSON, XML, or AI JSON node data…"
-                        spellCheck={false}
-                        className="h-72 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 font-mono text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)] focus:outline-none resize-none"
-                    />
-                    {applyError && (
-                        <p role="alert" className="text-xs text-red-400">{applyError}</p>
-                    )}
-                    {hasInput && (
-                        <div aria-live="polite" className="flex flex-wrap gap-2">
-                            {format && (
-                                <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs">
-                                    <span className="text-[var(--color-text-faint)]">Format </span>
-                                    <span className="font-semibold">{FORMAT_LABELS[format]}</span>
-                                </span>
-                            )}
-                            <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs">
-                                <span className="text-[var(--color-text-faint)]">Nodes </span>
-                                <span className="font-semibold">{nodeCount}</span>
-                            </span>
-                            <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs">
-                                <span className="text-[var(--color-text-faint)]">Links </span>
-                                <span className="font-semibold">{linkCount}</span>
-                            </span>
-                            <span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${isValid ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
-                                {isValid ? '✓ Valid' : '✗ Cannot parse'}
-                            </span>
-                        </div>
-                    )}
-
-                    {/* Live shader preview - re-renders on every edit. */}
-                    {tree && (
-                        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-                            <h3 className="mb-2 text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">Preview</h3>
-                            <div className="flex justify-center">
-                                <ShaderPreview tree={tree} size={200} />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* High-quality render via headless blender. Renders the
-                        current textarea content - hit "Apply changes" first if
-                        you've edited and want the latest values reflected. */}
-                    {tree && format && (
-                        <HQRender content={input} format={format} slug={dirty ? 'editor-draft' : 'editor'} />
-                    )}
-                </div>
-
-                {/* Graph preview */}
-                <div className="relative rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden" style={{ height: '480px' }}>
+            {/* Two-column layout: graph fills the rest, sidebar with tabs on the right. */}
+            <div className="flex-1 grid gap-3 min-h-0 grid-cols-1 lg:grid-cols-[1fr_22rem]">
+                {/* Graph - fills available height */}
+                <div className="relative rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden min-h-[400px]">
                     {tree && Object.keys(tree.nodes).length > 0 ? (
                         <>
                             <NodeGraph
@@ -304,43 +330,30 @@ export function ViewerPage() {
                             </button>
                         </>
                     ) : (
-                        <div className="flex h-full items-center justify-center p-8">
+                        <div className="flex h-full min-h-[400px] items-center justify-center p-8">
                             <p className="text-sm text-[var(--color-text-faint)] text-center">
-                                {hasInput ? 'Parsing…' : 'Paste node data on the left to see the graph here.'}
+                                {hasInput ? 'Parsing…' : 'Open the Source tab on the right and paste a node tree.'}
                             </p>
                         </div>
                     )}
                 </div>
 
-                {/* Inspector panel - desktop sidebar, mobile drawer */}
-                {selectedNode && tree && (
-                    <NodeInspector
-                        tree={tree}
-                        nodeName={selectedNode}
-                        onClose={() => setSelectedNode(null)}
-                        onSelect={(n) => setSelectedNode(n)}
-                        editable
-                        onInputChange={handleInputChange}
-                        onPropertyChange={handlePropertyChange}
-                        className="h-[480px] hidden lg:flex"
-                    />
-                )}
+                {/* Sidebar with tabs */}
+                <aside className="flex flex-col rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden min-h-0">
+                    <div className="flex border-b border-[var(--color-border)]" role="tablist">
+                        <TabBtn id="preview" label="Preview" />
+                        <TabBtn id="render" label="Render" />
+                        <TabBtn id="inspector" label={selectedNode ? `Inspector` : 'Inspector'} disabled={!selectedNode || !tree} />
+                        <TabBtn id="source" label="Source" />
+                    </div>
+                    <div className="flex-1 overflow-y-auto min-h-0">
+                        {sidebarPanels}
+                    </div>
+                </aside>
             </div>
 
-            {/* Mobile / tablet inspector: full-width below graph */}
-            {selectedNode && tree && (
-                <div className="mt-4 lg:hidden">
-                    <NodeInspector
-                        tree={tree}
-                        nodeName={selectedNode}
-                        onClose={() => setSelectedNode(null)}
-                        onSelect={(n) => setSelectedNode(n)}
-                        editable
-                        onInputChange={handleInputChange}
-                        onPropertyChange={handlePropertyChange}
-                        className="max-h-[480px]"
-                    />
-                </div>
+            {applyError && (
+                <p role="alert" className="mt-2 text-xs text-red-400 shrink-0">{applyError}</p>
             )}
 
             {/* Fullscreen graph - inspector overlays on the right when a node

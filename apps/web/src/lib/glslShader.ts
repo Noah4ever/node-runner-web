@@ -70,15 +70,35 @@ function vec3Literal(v: number[]): string {
     return `vec3(${glslFloat(v[0] ?? 0)}, ${glslFloat(v[1] ?? 0)}, ${glslFloat(v[2] ?? 0)})`
 }
 
-// Sample a Blender-style color ramp at fac. We bake the stops into the
-// GLSL function below so we don't need a texture.
-function emitColorRamp(name: string, elements: { position: number; color: number[] }[]): string {
+// Sample a Blender-style color ramp at fac. Interpolates linearly between
+// adjacent stops (with smoothstep when interpolation is 'EASE' or 'B_SPLINE',
+// matching Blender's behaviour). Constant when interpolation is 'CONSTANT'.
+function emitColorRamp(name: string, elements: { position: number; color: number[] }[], interpolation = 'LINEAR'): string {
     const sorted = [...elements].sort((a, b) => a.position - b.position)
-    const stops = sorted.map((e) => `    if (fac <= ${glslFloat(e.position)}) return ${vec3Literal(e.color)};`).join('\n')
+    const first = sorted[0]
     const last = sorted[sorted.length - 1]
+
+    // For each adjacent pair, emit an if-branch that interpolates between them.
+    const branches: string[] = []
+    for (let i = 0; i < sorted.length - 1; i++) {
+        const a = sorted[i]
+        const b = sorted[i + 1]
+        const span = Math.max(b.position - a.position, 1e-6)
+        const tExpr = `((fac - ${glslFloat(a.position)}) / ${glslFloat(span)})`
+        let mixT: string
+        if (interpolation === 'CONSTANT') {
+            mixT = '0.0' // pick lower stop's color
+        } else if (interpolation === 'EASE' || interpolation === 'B_SPLINE' || interpolation === 'CARDINAL') {
+            mixT = `smoothstep(0.0, 1.0, ${tExpr})`
+        } else {
+            mixT = tExpr
+        }
+        branches.push(`    if (fac <= ${glslFloat(b.position)}) return mix(${vec3Literal(a.color)}, ${vec3Literal(b.color)}, ${mixT});`)
+    }
     return `vec3 ramp_${name}(float fac) {
     fac = clamp(fac, 0.0, 1.0);
-${stops}
+    if (fac <= ${glslFloat(first?.position ?? 0)}) return ${vec3Literal(first?.color ?? [0, 0, 0])};
+${branches.join('\n')}
     return ${vec3Literal(last?.color ?? [1, 1, 1])};
 }`
 }
@@ -91,6 +111,10 @@ const SUPPORTED_NODES = new Set([
     'ShaderNodeTexNoise',
     'ShaderNodeTexVoronoi',
     'ShaderNodeTexWave',
+    'ShaderNodeTexChecker',
+    'ShaderNodeTexBrick',
+    'ShaderNodeTexGradient',
+    'ShaderNodeTexMagic',
     'ShaderNodeValToRGB',
     'ShaderNodeMixRGB',
     'ShaderNodeMix',
@@ -98,6 +122,16 @@ const SUPPORTED_NODES = new Set([
     'ShaderNodeVectorMath',
     'ShaderNodeRGB',
     'ShaderNodeValue',
+    'ShaderNodeBrightContrast',
+    'ShaderNodeGamma',
+    'ShaderNodeHueSaturation',
+    'ShaderNodeInvert',
+    'ShaderNodeSeparateColor',
+    'ShaderNodeCombineColor',
+    'ShaderNodeSeparateXYZ',
+    'ShaderNodeCombineXYZ',
+    'ShaderNodeSeparateRGB', // legacy
+    'ShaderNodeCombineRGB',  // legacy
     'ShaderNodeFresnel',
     'ShaderNodeLayerWeight',
     'ShaderNodeBump',
@@ -243,17 +277,139 @@ class Compiler {
                 return type === 'vec3' ? `vec3(${facExpr})` : facExpr
             }
 
+            case 'ShaderNodeTexChecker': {
+                const vec = this.resolveInput(id, 'Vector', 'vec3', [0, 0, 0])
+                const scale = this.resolveInput(id, 'Scale', 'float', 5)
+                const c1 = this.resolveInput(id, 'Color1', 'vec3', [0.8, 0.8, 0.8])
+                const c2 = this.resolveInput(id, 'Color2', 'vec3', [0.2, 0.2, 0.2])
+                // floor.xyz parity XOR -> checker
+                const facExpr = `mod(floor((${vec}).x * (${scale})) + floor((${vec}).y * (${scale})) + floor((${vec}).z * (${scale})), 2.0)`
+                if (socketName === 'Color') return type === 'float' ? facExpr : `mix(${c2}, ${c1}, ${facExpr})`
+                return type === 'vec3' ? `vec3(${facExpr})` : facExpr
+            }
+
+            case 'ShaderNodeTexBrick': {
+                // Approximation: row offset every other y-band.
+                const vec = this.resolveInput(id, 'Vector', 'vec3', [0, 0, 0])
+                const scale = this.resolveInput(id, 'Scale', 'float', 5)
+                const c1 = this.resolveInput(id, 'Color1', 'vec3', [0.8, 0.2, 0.1])
+                const c2 = this.resolveInput(id, 'Color2', 'vec3', [0.65, 0.15, 0.05])
+                const mortar = this.resolveInput(id, 'Mortar', 'vec3', [0.1, 0.1, 0.1])
+                // Rough brick pattern - good enough for preview.
+                const brickGlsl = `(step(0.95, fract((${vec}).x * (${scale}) + step(1.0, mod(floor((${vec}).y * (${scale})), 2.0)) * 0.5)) + step(0.9, fract((${vec}).y * (${scale}))))`
+                if (socketName === 'Color') {
+                    return type === 'float' ? brickGlsl : `mix(mix(${c1}, ${c2}, fract((${vec}).x)), ${mortar}, clamp(${brickGlsl}, 0.0, 1.0))`
+                }
+                return type === 'vec3' ? `vec3(${brickGlsl})` : brickGlsl
+            }
+
+            case 'ShaderNodeTexGradient': {
+                const vec = this.resolveInput(id, 'Vector', 'vec3', [0, 0, 0])
+                const grad = (node.properties?.gradient_type as string) ?? 'LINEAR'
+                let expr: string
+                switch (grad) {
+                    case 'QUADRATIC': expr = `max(0.0, (${vec}).x) * max(0.0, (${vec}).x)`; break
+                    case 'EASING': expr = `smoothstep(0.0, 1.0, (${vec}).x)`; break
+                    case 'DIAGONAL': expr = `((${vec}).x + (${vec}).y) * 0.5`; break
+                    case 'SPHERICAL': expr = `1.0 - length(${vec})`; break
+                    case 'RADIAL': expr = `atan((${vec}).y, (${vec}).x) / 6.28318 + 0.5`; break
+                    case 'LINEAR':
+                    default: expr = `(${vec}).x`
+                }
+                if (socketName === 'Color') return type === 'float' ? expr : `vec3(${expr})`
+                return type === 'vec3' ? `vec3(${expr})` : expr
+            }
+
+            case 'ShaderNodeTexMagic': {
+                // Magic texture is hard to replicate exactly; use a layered
+                // sin pattern that produces similar swirly output.
+                const vec = this.resolveInput(id, 'Vector', 'vec3', [0, 0, 0])
+                const scale = this.resolveInput(id, 'Scale', 'float', 5)
+                const distortion = this.resolveInput(id, 'Distortion', 'float', 1)
+                const swirl = `vec3(sin(((${vec}).x + (${vec}).y) * (${scale}) + (${distortion})), sin(((${vec}).y + (${vec}).z) * (${scale}) * 0.7), sin(((${vec}).z + (${vec}).x) * (${scale}) * 1.3))`
+                if (socketName === 'Color') return type === 'float' ? `dot(${swirl} * 0.5 + 0.5, vec3(0.333))` : `${swirl} * 0.5 + 0.5`
+                return type === 'vec3' ? `${swirl} * 0.5 + 0.5` : `dot(${swirl} * 0.5 + 0.5, vec3(0.333))`
+            }
+
+            case 'ShaderNodeBrightContrast': {
+                const col = this.resolveInput(id, 'Color', 'vec3', [0.5, 0.5, 0.5])
+                const bright = this.resolveInput(id, 'Bright', 'float', 0)
+                const contrast = this.resolveInput(id, 'Contrast', 'float', 0)
+                const expr = `((${col}) - 0.5) * (1.0 + (${contrast})) + 0.5 + (${bright})`
+                return type === 'float' ? `dot(${expr}, vec3(0.333))` : expr
+            }
+
+            case 'ShaderNodeGamma': {
+                const col = this.resolveInput(id, 'Color', 'vec3', [1, 1, 1])
+                const gamma = this.resolveInput(id, 'Gamma', 'float', 1)
+                const expr = `pow(max(${col}, vec3(0.0)), vec3(${gamma}))`
+                return type === 'float' ? `dot(${expr}, vec3(0.333))` : expr
+            }
+
+            case 'ShaderNodeHueSaturation': {
+                const col = this.resolveInput(id, 'Color', 'vec3', [1, 1, 1])
+                const hue = this.resolveInput(id, 'Hue', 'float', 0.5)
+                const sat = this.resolveInput(id, 'Saturation', 'float', 1)
+                const val = this.resolveInput(id, 'Value', 'float', 1)
+                // Rough approximation: shift toward grayscale by saturation, scale by value.
+                const gray = `vec3(dot(${col}, vec3(0.299, 0.587, 0.114)))`
+                const expr = `((mix(${gray}, ${col}, ${sat}) * ${val}) * (1.0 + 0.1 * (${hue} - 0.5)))`
+                return type === 'float' ? `dot(${expr}, vec3(0.333))` : expr
+            }
+
+            case 'ShaderNodeInvert': {
+                const col = this.resolveInput(id, 'Color', 'vec3', [0, 0, 0])
+                const fac = this.resolveInput(id, 'Fac', 'float', 1)
+                const expr = `mix(${col}, vec3(1.0) - ${col}, clamp(${fac}, 0.0, 1.0))`
+                return type === 'float' ? `dot(${expr}, vec3(0.333))` : expr
+            }
+
+            case 'ShaderNodeSeparateColor':
+            case 'ShaderNodeSeparateRGB': {
+                const col = this.resolveInput(id, ['Color', 'Image'], 'vec3', [0, 0, 0])
+                if (socketName === 'R' || socketName === 'Red') return type === 'vec3' ? `vec3((${col}).r)` : `(${col}).r`
+                if (socketName === 'G' || socketName === 'Green') return type === 'vec3' ? `vec3((${col}).g)` : `(${col}).g`
+                if (socketName === 'B' || socketName === 'Blue') return type === 'vec3' ? `vec3((${col}).b)` : `(${col}).b`
+                return col
+            }
+
+            case 'ShaderNodeCombineColor':
+            case 'ShaderNodeCombineRGB': {
+                const r = this.resolveInput(id, ['Red', 'R'], 'float', 0)
+                const g = this.resolveInput(id, ['Green', 'G'], 'float', 0)
+                const b = this.resolveInput(id, ['Blue', 'B'], 'float', 0)
+                const expr = `vec3(${r}, ${g}, ${b})`
+                return type === 'float' ? `dot(${expr}, vec3(0.333))` : expr
+            }
+
+            case 'ShaderNodeSeparateXYZ': {
+                const v = this.resolveInput(id, 'Vector', 'vec3', [0, 0, 0])
+                if (socketName === 'X') return type === 'vec3' ? `vec3((${v}).x)` : `(${v}).x`
+                if (socketName === 'Y') return type === 'vec3' ? `vec3((${v}).y)` : `(${v}).y`
+                if (socketName === 'Z') return type === 'vec3' ? `vec3((${v}).z)` : `(${v}).z`
+                return v
+            }
+
+            case 'ShaderNodeCombineXYZ': {
+                const x = this.resolveInput(id, 'X', 'float', 0)
+                const y = this.resolveInput(id, 'Y', 'float', 0)
+                const z = this.resolveInput(id, 'Z', 'float', 0)
+                const expr = `vec3(${x}, ${y}, ${z})`
+                return type === 'float' ? `dot(${expr}, vec3(0.333))` : expr
+            }
+
             case 'ShaderNodeValToRGB': {
                 // Color Ramp - read stops from properties.color_ramp.elements
                 const ramp = (node.properties?.color_ramp ?? (node as unknown as { settings?: { color_ramp?: unknown } }).settings?.color_ramp) as
-                    | { elements?: { position: number; color: number[] }[] }
+                    | { elements?: { position: number; color: number[] }[]; interpolation?: string }
                     | undefined
                 const elements = (ramp?.elements ?? []).filter((e) => Array.isArray(e?.color) && typeof e?.position === 'number')
                 const safe: { position: number; color: number[] }[] = elements.length > 0
                     ? elements as { position: number; color: number[] }[]
                     : [{ position: 0, color: [0, 0, 0] }, { position: 1, color: [1, 1, 1] }]
+                const interpolation = (ramp?.interpolation as string) || 'LINEAR'
                 const rampName = `r${this.rampCounter++}`
-                this.rampDecls.push(emitColorRamp(rampName, safe))
+                this.rampDecls.push(emitColorRamp(rampName, safe, interpolation))
                 const fac = this.resolveInput(id, 'Fac', 'float', 0.5)
                 if (socketName === 'Color') {
                     const v = `ramp_${rampName}(${fac})`
