@@ -211,13 +211,19 @@ def build_material(tree: dict) -> "bpy.types.Material":
 
     # Wire links (named sockets - bpy looks them up case-sensitively).
     for link in (tree.get("links") or []):
-        fn = node_map.get(link.get("fromNode"))
-        tn = node_map.get(link.get("toNode"))
+        # Accept both camelCase (JS/API shape) and snake_case (python-native
+        # shape that encode_json emits). The same renderer is fed both.
+        from_node = link.get("fromNode") or link.get("from_node")
+        to_node = link.get("toNode") or link.get("to_node")
+        from_sock_name = link.get("fromSocket") or link.get("from_socket") or link.get("from_socket_identifier")
+        to_sock_name = link.get("toSocket") or link.get("to_socket") or link.get("to_socket_identifier")
+        fn = node_map.get(from_node)
+        tn = node_map.get(to_node)
         if fn is None or tn is None:
             continue
         try:
-            fs = fn.outputs.get(link.get("fromSocket")) or (fn.outputs[0] if fn.outputs else None)
-            ts = tn.inputs.get(link.get("toSocket")) or (tn.inputs[0] if tn.inputs else None)
+            fs = fn.outputs.get(from_sock_name) or (fn.outputs[0] if fn.outputs else None)
+            ts = tn.inputs.get(to_sock_name) or (tn.inputs[0] if tn.inputs else None)
             if fs and ts:
                 nt.links.new(fs, ts)
         except Exception:
@@ -299,13 +305,19 @@ def populate_node_tree(nt, tree: dict) -> None:
         node_map[name] = n
 
     for link in (tree.get("links") or []):
-        fn = node_map.get(link.get("fromNode"))
-        tn = node_map.get(link.get("toNode"))
+        # Accept both camelCase (JS/API shape) and snake_case (python-native
+        # shape that encode_json emits). The same renderer is fed both.
+        from_node = link.get("fromNode") or link.get("from_node")
+        to_node = link.get("toNode") or link.get("to_node")
+        from_sock_name = link.get("fromSocket") or link.get("from_socket") or link.get("from_socket_identifier")
+        to_sock_name = link.get("toSocket") or link.get("to_socket") or link.get("to_socket_identifier")
+        fn = node_map.get(from_node)
+        tn = node_map.get(to_node)
         if fn is None or tn is None:
             continue
         try:
-            fs = fn.outputs.get(link.get("fromSocket")) or (fn.outputs[0] if fn.outputs else None)
-            ts = tn.inputs.get(link.get("toSocket")) or (tn.inputs[0] if tn.inputs else None)
+            fs = fn.outputs.get(from_sock_name) or (fn.outputs[0] if fn.outputs else None)
+            ts = tn.inputs.get(to_sock_name) or (tn.inputs[0] if tn.inputs else None)
             if fs and ts:
                 nt.links.new(fs, ts)
         except Exception:
