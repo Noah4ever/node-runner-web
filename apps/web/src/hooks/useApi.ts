@@ -59,7 +59,7 @@ export function useDiff() {
 
 export function useCreateShare() {
     return useMutation({
-        mutationFn: (data: { title: string; content: string; format: string; description?: string; isPublic?: boolean; tags?: string[]; images?: string[] }) =>
+        mutationFn: (data: { title: string; content: string; format: string; description?: string; isPublic?: boolean; tags?: string[]; images?: string[]; license?: string }) =>
             api.createShare(data),
     })
 }
