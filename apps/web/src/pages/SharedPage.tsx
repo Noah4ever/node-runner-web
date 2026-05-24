@@ -7,6 +7,7 @@ import { NodeInspector } from '@/components/NodeInspector'
 import { UserAvatar } from '@/components/UserAvatar'
 import { InlineConvert } from '@/components/InlineConvert'
 import { CitationModal } from '@/components/CitationModal'
+import { ShaderPreview } from '@/components/ShaderPreview'
 import { LICENSE_INFO, type NodeLicense, type NodeTree, type NodeFormat } from '@node-runner/shared'
 
 interface ShareData {
@@ -236,6 +237,16 @@ export function SharedPage() {
 
                 {/* Sidebar */}
                 <div className="space-y-4">
+                    {/* Shader preview - shown for shader trees; auto-detects via Material Output node */}
+                    {page.tree && (
+                        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                            <h3 className="mb-3 text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">Preview</h3>
+                            <div className="flex justify-center">
+                                <ShaderPreview tree={page.tree} size={220} />
+                            </div>
+                        </div>
+                    )}
+
                     {/* Metadata */}
                     <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                         <h3 className="mb-3 text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">Details</h3>

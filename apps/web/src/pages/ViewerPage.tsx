@@ -4,6 +4,7 @@ import { useNodeStore } from '@/stores/nodeStore'
 import { api } from '@/lib/api'
 import { NodeGraph } from '@/components/NodeGraph'
 import { NodeInspector } from '@/components/NodeInspector'
+import { ShaderPreview } from '@/components/ShaderPreview'
 import { FORMAT_LABELS, type NodeFormat } from '@node-runner/shared'
 import type { NodeTree, NodeData } from '@node-runner/shared'
 
@@ -229,6 +230,16 @@ export function ViewerPage() {
                             <span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${isValid ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
                                 {isValid ? '✓ Valid' : '✗ Cannot parse'}
                             </span>
+                        </div>
+                    )}
+
+                    {/* Live shader preview - re-renders on every edit. */}
+                    {tree && (
+                        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                            <h3 className="mb-2 text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">Preview</h3>
+                            <div className="flex justify-center">
+                                <ShaderPreview tree={tree} size={200} />
+                            </div>
                         </div>
                     )}
                 </div>
