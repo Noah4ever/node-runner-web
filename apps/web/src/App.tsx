@@ -28,6 +28,7 @@ export function App() {
                     <Route path="paste" element={<Navigate to="/upload" replace />} />
                     <Route path="convert" element={<ConvertPage />} />
                     <Route path="viewer" element={<ViewerPage />} />
+                    <Route path="editor" element={<ViewerPage />} />
                     <Route path="diff" element={<DiffPage />} />
                     <Route path="discover" element={<DiscoverPage />} />
                     <Route path="share/:id" element={<SharedPage />} />

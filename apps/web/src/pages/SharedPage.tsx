@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useGetShare, useToggleLike, useToggleSave, useDeleteShare, useToggleBan, useAuth } from '@/hooks/useApi'
-import { useAuthStore } from '@/stores/nodeStore'
+import { useAuthStore, useNodeStore } from '@/stores/nodeStore'
 import { NodeGraph } from '@/components/NodeGraph'
 import { NodeInspector } from '@/components/NodeInspector'
 import { UserAvatar } from '@/components/UserAvatar'
 import { InlineConvert } from '@/components/InlineConvert'
-import type { NodeTree, NodeFormat } from '@node-runner/shared'
+import { CitationModal } from '@/components/CitationModal'
+import { LICENSE_INFO, type NodeLicense, type NodeTree, type NodeFormat } from '@node-runner/shared'
 
 interface ShareData {
     id: string
@@ -27,6 +28,7 @@ interface ShareData {
     likes: number
     liked: boolean
     saved: boolean
+    license?: NodeLicense
     createdAt: string
 }
 
@@ -39,6 +41,7 @@ export function SharedPage() {
     const banMutation = useToggleBan()
     const { user: currentUser } = useAuth()
     const { token } = useAuthStore()
+    const { setRawInput, setDetectedFormat } = useNodeStore()
     const navigate = useNavigate()
     const [copiedData, setCopiedData] = useState(false)
     const [copiedLink, setCopiedLink] = useState(false)
@@ -46,6 +49,7 @@ export function SharedPage() {
     const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
     const [graphFullscreen, setGraphFullscreen] = useState(false)
     const [selectedNode, setSelectedNode] = useState<string | null>(null)
+    const [citeOpen, setCiteOpen] = useState(false)
 
     const pageImages = page?.images ?? []
 
@@ -105,6 +109,13 @@ export function SharedPage() {
         navigator.clipboard.writeText(url)
         setCopiedImport(true)
         setTimeout(() => setCopiedImport(false), 1500)
+    }
+
+    function handleOpenInEditor() {
+        if (!page) return
+        setRawInput(page.content)
+        setDetectedFormat(page.format as NodeFormat)
+        navigate('/editor')
     }
 
     function handleLike() {
@@ -254,6 +265,26 @@ export function SharedPage() {
                                 <dt className="text-[var(--color-text-muted)]">Links</dt>
                                 <dd>{page.linkCount ?? 0}</dd>
                             </div>
+                            {page.license && LICENSE_INFO[page.license] && (
+                                <div className="flex items-center justify-between gap-2">
+                                    <dt className="text-[var(--color-text-muted)]">License</dt>
+                                    <dd>
+                                        {LICENSE_INFO[page.license].url ? (
+                                            <a
+                                                href={LICENSE_INFO[page.license].url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-[var(--color-accent)] hover:underline"
+                                                title={LICENSE_INFO[page.license].blurb}
+                                            >
+                                                {LICENSE_INFO[page.license].short}
+                                            </a>
+                                        ) : (
+                                            <span title={LICENSE_INFO[page.license].blurb}>{LICENSE_INFO[page.license].short}</span>
+                                        )}
+                                    </dd>
+                                </div>
+                            )}
                         </dl>
                         {page.tags && page.tags.length > 0 && (
                             <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
@@ -298,8 +329,15 @@ export function SharedPage() {
                     {/* Actions */}
                     <div className="flex flex-col gap-2">
                         <button
+                            onClick={handleOpenInEditor}
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-black hover:bg-[var(--color-accent-hover)] transition-colors cursor-pointer"
+                        >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                            Open in editor
+                        </button>
+                        <button
                             onClick={handleCopyData}
-                            className={`inline-flex w-full items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-colors cursor-pointer ${copiedData ? 'bg-green-600 text-white' : 'bg-[var(--color-accent)] text-black hover:bg-[var(--color-accent-hover)]'}`}
+                            className={`inline-flex w-full items-center justify-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${copiedData ? 'border-green-500/40 text-green-400' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-faint)] hover:text-[var(--color-text)]'}`}
                         >
                             {copiedData ? (
                                 <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>
@@ -316,6 +354,13 @@ export function SharedPage() {
                             ) : (
                                 <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>Copy Link</>
                             )}
+                        </button>
+                        <button
+                            onClick={() => setCiteOpen(true)}
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] hover:border-[var(--color-text-faint)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
+                        >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-7l-4 4z" /></svg>
+                            Cite
                         </button>
                     </div>
 
@@ -410,6 +455,16 @@ export function SharedPage() {
                     )}
                 </div>
             )}
+
+            {/* Citation modal */}
+            <CitationModal
+                open={citeOpen}
+                onClose={() => setCiteOpen(false)}
+                title={page.title}
+                authorName={page.authorName}
+                slug={page.slug}
+                createdAt={page.createdAt}
+            />
 
             {/* Lightbox */}
             {lightboxIndex !== null && pageImages[lightboxIndex] && (

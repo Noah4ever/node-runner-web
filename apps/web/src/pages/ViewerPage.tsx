@@ -83,7 +83,7 @@ export function ViewerPage() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
             <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
                 <div>
-                    <h1 className="text-2xl font-bold">Viewer</h1>
+                    <h1 className="text-2xl font-bold">Editor</h1>
                     <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                         Paste any node tree and see it rendered. Nothing is uploaded unless you publish.
                     </p>

@@ -5,7 +5,8 @@ import { useInspect, useValidate, useCreateShare, useAuth } from '@/hooks/useApi
 import { api } from '@/lib/api'
 import { NodeGraph } from '@/components/NodeGraph'
 import { TagSelect, ALL_TAGS } from '@/components/TagSelect'
-import type { NodeTree } from '@node-runner/shared'
+import { LicenseSelect } from '@/components/LicenseSelect'
+import { DEFAULT_LICENSE, type NodeLicense, type NodeTree } from '@node-runner/shared'
 
 type Step = 'paste' | 'details' | 'published'
 
@@ -19,6 +20,7 @@ export function UploadPage() {
     const [description, setDescription] = useState('')
     const [selectedTags, setSelectedTags] = useState<string[]>([])
     const [images, setImages] = useState<string[]>([])
+    const [license, setLicense] = useState<NodeLicense>(DEFAULT_LICENSE)
     const [shareSlug, setShareSlug] = useState('')
     const [livePreview, setLivePreview] = useState<NodeTree | null>(null)
     const [liveFormat, setLiveFormat] = useState<string | null>(null)
@@ -165,6 +167,7 @@ export function UploadPage() {
                 isPublic: true,
                 tags: selectedTags.length > 0 ? selectedTags : undefined,
                 images: images.length > 0 ? images : undefined,
+                license,
             },
             {
                 onSuccess: (data) => {
@@ -367,6 +370,10 @@ export function UploadPage() {
                             <TagSelect selected={selectedTags} onChange={setSelectedTags} />
                         </div>
                         <div>
+                            <label className="block text-sm font-medium mb-1.5">License</label>
+                            <LicenseSelect value={license} onChange={setLicense} />
+                        </div>
+                        <div>
                             <label className="block text-sm font-medium mb-1.5">
                                 Images <span className="text-[var(--color-text-faint)]">(optional, max {isLoggedIn ? 4 : 1})</span>
                             </label>
@@ -466,6 +473,7 @@ export function UploadPage() {
                                 setDescription('')
                                 setSelectedTags([])
                                 setImages([])
+                                setLicense(DEFAULT_LICENSE)
                                 setShareSlug('')
                                 setLivePreview(null)
                             }}

@@ -93,6 +93,62 @@ export interface DiffResult {
     summary: string
 }
 
+// Licenses uploads can be tagged with. Defaults to CC BY 4.0 when omitted.
+// "arr" = all rights reserved.
+export type NodeLicense = 'cc0' | 'cc-by-4.0' | 'cc-by-sa-4.0' | 'cc-by-nc-4.0' | 'mit' | 'arr'
+
+export const NODE_LICENSES: readonly NodeLicense[] = [
+    'cc-by-4.0', 'cc0', 'cc-by-sa-4.0', 'cc-by-nc-4.0', 'mit', 'arr',
+] as const
+
+export const DEFAULT_LICENSE: NodeLicense = 'cc-by-4.0'
+
+export interface LicenseInfo {
+    label: string
+    short: string
+    url: string
+    blurb: string
+}
+
+export const LICENSE_INFO: Record<NodeLicense, LicenseInfo> = {
+    'cc-by-4.0': {
+        label: 'Creative Commons Attribution 4.0',
+        short: 'CC BY 4.0',
+        url: 'https://creativecommons.org/licenses/by/4.0/',
+        blurb: 'Anyone can use, modify, and redistribute, as long as they credit you.',
+    },
+    'cc0': {
+        label: 'Creative Commons Zero (Public Domain)',
+        short: 'CC0',
+        url: 'https://creativecommons.org/publicdomain/zero/1.0/',
+        blurb: 'No rights reserved. Anyone can use, modify, and redistribute without crediting you.',
+    },
+    'cc-by-sa-4.0': {
+        label: 'Creative Commons Attribution-ShareAlike 4.0',
+        short: 'CC BY-SA 4.0',
+        url: 'https://creativecommons.org/licenses/by-sa/4.0/',
+        blurb: 'Credit required. Derivatives must use the same license.',
+    },
+    'cc-by-nc-4.0': {
+        label: 'Creative Commons Attribution-NonCommercial 4.0',
+        short: 'CC BY-NC 4.0',
+        url: 'https://creativecommons.org/licenses/by-nc/4.0/',
+        blurb: 'Credit required. Non-commercial use only.',
+    },
+    'mit': {
+        label: 'MIT License',
+        short: 'MIT',
+        url: 'https://opensource.org/licenses/MIT',
+        blurb: 'Use freely, including commercially. Include the license notice in redistributions.',
+    },
+    'arr': {
+        label: 'All Rights Reserved',
+        short: 'All rights reserved',
+        url: '',
+        blurb: 'No reuse permitted without your explicit permission.',
+    },
+}
+
 // Shared page / share types
 export interface SharedNodePage {
     id: string

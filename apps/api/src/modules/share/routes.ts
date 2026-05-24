@@ -73,7 +73,7 @@ export const shareRoutes: FastifyPluginAsync = async (app) => {
     }
 
     // Validate content is parseable
-    const { content, format, title, description, isPublic, tags, images } = parsed.data
+    const { content, format, title, description, isPublic, tags, images, license } = parsed.data
     const detectedFormat = detector.detect(content)
     const sourceFormat = format ?? detectedFormat.format
 
@@ -123,6 +123,7 @@ export const shareRoutes: FastifyPluginAsync = async (app) => {
       previewColor: null,
       images: images ?? [],
       tags: tags ?? [],
+      license: license ?? 'cc-by-4.0',
       authorId: user?.userId ?? null,
       authorName: user?.name ?? user?.email ?? 'Anonymous',
       authorAvatarUrl: user?.avatarUrl ?? null,
@@ -344,6 +345,14 @@ export const shareRoutes: FastifyPluginAsync = async (app) => {
       record.images = (body.images as string[])
         .filter((i) => typeof i === 'string' && i.length > 0)
         .slice(0, 4)
+    }
+
+    // Update license
+    if (typeof body.license === 'string') {
+      const allowed = ['cc0', 'cc-by-4.0', 'cc-by-sa-4.0', 'cc-by-nc-4.0', 'mit', 'arr']
+      if (allowed.includes(body.license)) {
+        record.license = body.license
+      }
     }
 
     // Allow updating node tree content

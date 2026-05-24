@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/nodeStore'
 import { NodeGraph } from '@/components/NodeGraph'
 import { UserAvatar } from '@/components/UserAvatar'
 import { ALL_TAGS } from '@/components/TagSelect'
-import { NODE_FORMATS, FORMAT_LABELS, type NodeFormat } from '@node-runner/shared'
+import { NODE_FORMATS, FORMAT_LABELS, NODE_LICENSES, LICENSE_INFO, type NodeFormat, type NodeLicense } from '@node-runner/shared'
 import type { NodeTree } from '@node-runner/shared'
 
 const ITEMS_PER_PAGE = 12
@@ -36,6 +36,7 @@ interface ShareItem {
     liked: boolean
     saved: boolean
     images: string[]
+    license?: NodeLicense
     createdAt: string
 }
 
@@ -44,6 +45,7 @@ export function DiscoverPage() {
     const [search, setSearch] = useState(searchParams.get('q') ?? '')
     const [activeTags, setActiveTags] = useState<string[]>([])
     const [activeFormats, setActiveFormats] = useState<NodeFormat[]>([])
+    const [activeLicenses, setActiveLicenses] = useState<NodeLicense[]>([])
     const [sortBy, setSortBy] = useState<SortOption>('newest')
     const [hasImagesOnly, setHasImagesOnly] = useState(false)
     const [minNodes, setMinNodes] = useState(0)
@@ -64,15 +66,17 @@ export function DiscoverPage() {
 
     const items = (shares as ShareItem[] | undefined) ?? []
 
-    // Counts per tag/format so users see what's filterable
-    const { tagCounts, formatCounts } = useMemo(() => {
+    // Counts per tag/format/license so users see what's filterable
+    const { tagCounts, formatCounts, licenseCounts } = useMemo(() => {
         const tc = new Map<string, number>()
         const fc = new Map<string, number>()
+        const lc = new Map<string, number>()
         for (const it of items) {
             for (const t of it.tags ?? []) tc.set(t, (tc.get(t) ?? 0) + 1)
             if (it.format) fc.set(it.format, (fc.get(it.format) ?? 0) + 1)
+            if (it.license) lc.set(it.license, (lc.get(it.license) ?? 0) + 1)
         }
-        return { tagCounts: tc, formatCounts: fc }
+        return { tagCounts: tc, formatCounts: fc, licenseCounts: lc }
     }, [items])
 
     const filtered = useMemo(() => {
@@ -84,9 +88,10 @@ export function DiscoverPage() {
                     item.authorName.toLowerCase().includes(search.toLowerCase())
                 const matchesTags = activeTags.length === 0 || activeTags.every((t) => item.tags?.includes(t))
                 const matchesFormat = activeFormats.length === 0 || activeFormats.includes(item.format as NodeFormat)
+                const matchesLicense = activeLicenses.length === 0 || (item.license !== undefined && activeLicenses.includes(item.license))
                 const matchesImages = !hasImagesOnly || (item.images?.length ?? 0) > 0
                 const matchesMinNodes = item.nodeCount >= minNodes
-                return matchesSearch && matchesTags && matchesFormat && matchesImages && matchesMinNodes
+                return matchesSearch && matchesTags && matchesFormat && matchesLicense && matchesImages && matchesMinNodes
             })
             .sort((a, b) => {
                 switch (sortBy) {
@@ -97,13 +102,13 @@ export function DiscoverPage() {
                     default: return b.createdAt.localeCompare(a.createdAt)
                 }
             })
-    }, [items, search, activeTags, activeFormats, hasImagesOnly, minNodes, sortBy])
+    }, [items, search, activeTags, activeFormats, activeLicenses, hasImagesOnly, minNodes, sortBy])
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE))
     const currentPage = Math.min(page, totalPages)
     const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
-    useEffect(() => { setPage(1) }, [search, activeTags, activeFormats, hasImagesOnly, minNodes, sortBy])
+    useEffect(() => { setPage(1) }, [search, activeTags, activeFormats, activeLicenses, hasImagesOnly, minNodes, sortBy])
 
     function toggleTag(tag: string) {
         setActiveTags((curr) => curr.includes(tag) ? curr.filter((t) => t !== tag) : [...curr, tag])
@@ -113,10 +118,15 @@ export function DiscoverPage() {
         setActiveFormats((curr) => curr.includes(fmt) ? curr.filter((f) => f !== fmt) : [...curr, fmt])
     }
 
+    function toggleLicense(lic: NodeLicense) {
+        setActiveLicenses((curr) => curr.includes(lic) ? curr.filter((l) => l !== lic) : [...curr, lic])
+    }
+
     function clearFilters() {
         setSearch('')
         setActiveTags([])
         setActiveFormats([])
+        setActiveLicenses([])
         setHasImagesOnly(false)
         setMinNodes(0)
         setTagSearch('')
@@ -126,6 +136,7 @@ export function DiscoverPage() {
         (search ? 1 : 0) +
         activeTags.length +
         activeFormats.length +
+        activeLicenses.length +
         (hasImagesOnly ? 1 : 0) +
         (minNodes > 0 ? 1 : 0)
 
@@ -196,6 +207,31 @@ export function DiscoverPage() {
                                         className="accent-[var(--color-accent)] cursor-pointer"
                                     />
                                     {FORMAT_LABELS[fmt]}
+                                </span>
+                                <span className="text-xs text-[var(--color-text-faint)]">{count}</span>
+                            </label>
+                        )
+                    })}
+                </div>
+            </div>
+
+            {/* License */}
+            <div>
+                <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">License</h3>
+                <div className="space-y-1">
+                    {NODE_LICENSES.map((lic) => {
+                        const count = licenseCounts.get(lic) ?? 0
+                        const active = activeLicenses.includes(lic)
+                        return (
+                            <label key={lic} className={`flex items-center justify-between gap-2 rounded px-2 py-1 text-sm cursor-pointer transition-colors ${active ? 'bg-[var(--color-surface-hover)] text-[var(--color-text)]' : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'}`}>
+                                <span className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={active}
+                                        onChange={() => toggleLicense(lic)}
+                                        className="accent-[var(--color-accent)] cursor-pointer"
+                                    />
+                                    {LICENSE_INFO[lic].short}
                                 </span>
                                 <span className="text-xs text-[var(--color-text-faint)]">{count}</span>
                             </label>
@@ -344,11 +380,16 @@ export function DiscoverPage() {
                     )}
 
                     {/* Active filter chips */}
-                    {(activeTags.length > 0 || activeFormats.length > 0) && (
+                    {(activeTags.length > 0 || activeFormats.length > 0 || activeLicenses.length > 0) && (
                         <div className="mb-4 flex flex-wrap gap-1.5">
                             {activeFormats.map((fmt) => (
                                 <button key={fmt} onClick={() => toggleFormat(fmt)} className="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent)]/15 px-2 py-0.5 text-xs text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25 cursor-pointer">
                                     {FORMAT_LABELS[fmt]} ×
+                                </button>
+                            ))}
+                            {activeLicenses.map((lic) => (
+                                <button key={lic} onClick={() => toggleLicense(lic)} className="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent)]/15 px-2 py-0.5 text-xs text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25 cursor-pointer">
+                                    {LICENSE_INFO[lic].short} ×
                                 </button>
                             ))}
                             {activeTags.map((tag) => (

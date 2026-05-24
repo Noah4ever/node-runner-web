@@ -82,6 +82,7 @@ export const api = {
     isPublic?: boolean
     tags?: string[]
     images?: string[]
+    license?: string
   }) =>
     request<Record<string, unknown>>('/share', {
       method: 'POST',
@@ -105,6 +106,7 @@ export const api = {
       content?: string
       tags?: string[]
       images?: string[]
+      license?: string
     },
   ) =>
     request<Record<string, unknown>>(`/share/${encodeURIComponent(id)}`, {

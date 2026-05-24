@@ -3,6 +3,9 @@ import { z } from 'zod'
 // Format enum
 export const nodeFormatSchema = z.enum(['hash', 'json', 'xml', 'ai_json'])
 
+// License enum - matches NodeLicense in @node-runner/shared
+export const nodeLicenseSchema = z.enum(['cc0', 'cc-by-4.0', 'cc-by-sa-4.0', 'cc-by-nc-4.0', 'mit', 'arr'])
+
 // Parse / detect format
 export const detectFormatRequestSchema = z.object({
     input: z.string().min(1, 'Input is required').max(100_000, 'Input too large (max 100 KB)'),
@@ -62,6 +65,7 @@ export const createShareRequestSchema = z.object({
     isPublic: z.boolean().default(false),
     tags: z.array(z.string().max(30)).max(10).default([]),
     images: z.array(z.string().max(3_000_000, 'Image too large (max ~2 MB)')).max(4, 'Maximum 4 images allowed').default([]),
+    license: nodeLicenseSchema.optional(),
 })
 
 export const shareResponseSchema = z.object({
