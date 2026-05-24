@@ -104,6 +104,153 @@ def setup_scene(kind: str = "shader") -> None:
         pass
 
 
+def normalize_tree_shape(tree):
+    """Normalize the wide variety of input shapes we see into one canonical
+    form. Idempotent.
+
+    Handles:
+      - Dict-shaped inputs / outputs ({"Vector": 3.5}) -> [{name, value}, ...]
+      - String-pair links (["NodeA.Out", "NodeB.In"]) -> {fromNode, fromSocket, toNode, toSocket}
+      - camelCase OR snake_case link keys
+      - location {x, y} OR [x, y]
+      - Unwraps nested "settings" dict into properties (Color Ramp etc.)
+    """
+    if not isinstance(tree, dict):
+        return tree
+    nodes_in = tree.get("nodes")
+    if not isinstance(nodes_in, dict):
+        return tree
+
+    nodes_out = {}
+    for name, n in nodes_in.items():
+        if not isinstance(n, dict):
+            continue
+        loc = n.get("location")
+        if isinstance(loc, dict) and ("x" in loc or "y" in loc):
+            loc = [loc.get("x", 0), loc.get("y", 0)]
+        elif loc is None:
+            loc = [0, 0]
+
+        # Inputs: accept array OR named dict
+        raw_in = n.get("inputs")
+        if isinstance(raw_in, dict):
+            inputs = [{"name": k, "value": v} for k, v in raw_in.items()]
+        elif isinstance(raw_in, list):
+            inputs = raw_in
+        else:
+            inputs = []
+
+        raw_out = n.get("outputs")
+        if isinstance(raw_out, dict):
+            outputs = [{"name": k, "value": v} for k, v in raw_out.items()]
+        elif isinstance(raw_out, list):
+            outputs = raw_out
+        else:
+            outputs = []
+
+        # Properties: inline + unwrap "settings"
+        props = {}
+        existing_props = n.get("properties") if isinstance(n.get("properties"), dict) else {}
+        for k, v in existing_props.items():
+            props[k] = v
+        settings = n.get("settings")
+        if isinstance(settings, dict):
+            for k, v in settings.items():
+                if k not in props:
+                    props[k] = v
+        # Promote arbitrary other keys (excluding the known structural ones)
+        for k, v in n.items():
+            if k in ("type", "name", "label", "location", "location_absolute",
+                     "inputs", "outputs", "parent", "settings", "properties"):
+                continue
+            if k not in props:
+                props[k] = v
+
+        new_n = {
+            "type": n.get("type", ""),
+            "name": n.get("name", name),
+            "label": n.get("label", ""),
+            "location": loc,
+            "inputs": inputs,
+            "outputs": outputs,
+            "properties": props,
+        }
+        if n.get("parent"):
+            new_n["parent"] = n["parent"]
+        nodes_out[name] = new_n
+
+    # Links: accept string pairs, camelCase, snake_case
+    links_out = []
+    for link in (tree.get("links") or []):
+        if isinstance(link, list) and len(link) == 2 and isinstance(link[0], str) and isinstance(link[1], str):
+            fa = link[0].rfind(".")
+            fb = link[1].rfind(".")
+            if fa < 0 or fb < 0:
+                continue
+            links_out.append({
+                "fromNode": link[0][:fa], "fromSocket": link[0][fa+1:],
+                "toNode": link[1][:fb], "toSocket": link[1][fb+1:],
+            })
+        elif isinstance(link, dict):
+            links_out.append({
+                "fromNode": link.get("fromNode") or link.get("from_node") or "",
+                "fromSocket": link.get("fromSocket") or link.get("from_socket") or link.get("from_socket_identifier") or "",
+                "toNode": link.get("toNode") or link.get("to_node") or "",
+                "toSocket": link.get("toSocket") or link.get("to_socket") or link.get("to_socket_identifier") or "",
+            })
+
+    out = dict(tree)
+    out["nodes"] = nodes_out
+    out["links"] = links_out
+    return out
+
+
+def apply_color_ramp(ramp, spec):
+    """Populate a ColorRamp bpy_struct from a {interpolation, elements} dict.
+
+    The ramp comes pre-seeded with 2 stops (default linear B->W). We
+    add new stops to match the spec's length, then set position+color on
+    each, and finally try to align the stop count by removing trailing
+    extras."""
+    interp = spec.get("interpolation")
+    if isinstance(interp, str):
+        try:
+            ramp.interpolation = interp
+        except Exception:
+            pass
+
+    els = spec.get("elements")
+    if not isinstance(els, list):
+        return
+
+    # Add stops until we have enough. ramp.elements.new(position) returns the
+    # new element; positions are clamped to [0, 1].
+    while len(ramp.elements) < len(els):
+        try:
+            pos = float(els[len(ramp.elements)].get("position", 0.5)) if isinstance(els[len(ramp.elements)], dict) else 0.5
+            ramp.elements.new(max(0.0, min(1.0, pos)))
+        except Exception:
+            break
+
+    # Set position + color on each element.
+    for i, el in enumerate(els):
+        if i >= len(ramp.elements):
+            break
+        if not isinstance(el, dict):
+            continue
+        try:
+            pos = el.get("position")
+            if isinstance(pos, (int, float)):
+                ramp.elements[i].position = max(0.0, min(1.0, float(pos)))
+            col = el.get("color")
+            if isinstance(col, list) and len(col) >= 3:
+                r, g, b = float(col[0]), float(col[1]), float(col[2])
+                a = float(col[3]) if len(col) >= 4 else 1.0
+                ramp.elements[i].color = (r, g, b, a)
+        except Exception:
+            continue
+
+
 def has_shader_nodes(tree: dict) -> bool:
     """True only when the tree looks like an actual material - has a Material
     Output or a recognizable BSDF / emission node. Geometry trees often contain
@@ -201,6 +348,14 @@ def build_material(tree: dict) -> "bpy.types.Material":
                 "show_options", "show_preview", "show_texture", "target", "type",
                 "use_custom_color", "width", "width_hidden",
             }:
+                continue
+            # ColorRamp's "color_ramp" is a bpy_struct - direct setattr won't
+            # work. Construct elements via the bpy API instead.
+            if key == "color_ramp" and hasattr(n, "color_ramp") and isinstance(value, dict):
+                try:
+                    apply_color_ramp(n.color_ramp, value)
+                except Exception:
+                    pass
                 continue
             try:
                 setattr(n, key, value)
@@ -409,6 +564,10 @@ def main() -> int:
     except Exception as exc:
         sys.stderr.write(f"failed to read input: {exc}\n")
         return 3
+
+    # Normalize whatever shape we got into the canonical one (string-pair
+    # links and dict inputs are common from AI-authored shaders).
+    tree = normalize_tree_shape(tree)
 
     kind = tree_kind(tree)
     if kind == "none":
