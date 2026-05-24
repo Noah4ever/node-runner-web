@@ -68,6 +68,14 @@ interface NodeGraphProps {
     // key in tree.nodes). Pass undefined to disable click handling.
     onNodeClick?: (name: string | null) => void
     selectedNode?: string | null
+    /** When true, nodes are draggable and input/property values are editable inline. */
+    editable?: boolean
+    /** Called when a node is dragged. Receives the new {x,y} in Blender-space (y not yet inverted back). */
+    onNodeMove?: (nodeId: string, x: number, y: number) => void
+    /** Called when an input default value changes (positional). */
+    onInputChange?: (nodeId: string, socketIndex: number, next: unknown) => void
+    /** Called when a property value changes (by key). */
+    onPropertyChange?: (nodeId: string, key: string, next: unknown) => void
 }
 
 // Re-runs fitView once ReactFlow has actually measured all custom-node DOM
@@ -93,7 +101,7 @@ export function NodeGraph(props: NodeGraphProps) {
     )
 }
 
-function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, selectedNode }: NodeGraphProps) {
+function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, selectedNode, editable, onNodeMove, onInputChange, onPropertyChange }: NodeGraphProps) {
     const [miniMapOpen, setMiniMapOpen] = useState(true)
     const { data: socketNames } = useSocketNames()
 
@@ -185,6 +193,10 @@ function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, se
                 outputs,
                 properties,
                 isSelected: selectedNode === name,
+                editable: editable && !compact,
+                onInputChange,
+                onPropertyChange,
+                nodeId: name,
             }
 
             return {
@@ -207,7 +219,7 @@ function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, se
         }))
 
         return { nodes: flowNodes, edges: flowEdges }
-    }, [tree, selectedNode, socketNames, compact])
+    }, [tree, selectedNode, socketNames, compact, editable, onInputChange, onPropertyChange])
 
     if (nodes.length === 0) {
         return (
@@ -230,7 +242,12 @@ function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, se
                 maxZoom={4}
                 attributionPosition="bottom-left"
                 proOptions={{ hideAttribution: true }}
-                nodesDraggable={false}
+                nodesDraggable={!!editable && !compact}
+                onNodeDragStop={onNodeMove ? (_e, node) => {
+                    // ReactFlow position is in screen-space (Blender Y inverted at build time).
+                    // Pass the Blender-space coordinates back.
+                    onNodeMove(node.id, node.position.x, -node.position.y)
+                } : undefined}
                 nodesConnectable={false}
                 elementsSelectable={!compact}
                 panOnDrag

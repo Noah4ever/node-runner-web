@@ -5,7 +5,39 @@ import { api } from '@/lib/api'
 import { NodeGraph } from '@/components/NodeGraph'
 import { NodeInspector } from '@/components/NodeInspector'
 import { FORMAT_LABELS, type NodeFormat } from '@node-runner/shared'
-import type { NodeTree } from '@node-runner/shared'
+import type { NodeTree, NodeData } from '@node-runner/shared'
+
+// Immutable helpers for editing a NodeTree. Sockets serialized as {name, value}
+// keep the wrapper shape so re-encode preserves Blender's identification.
+function updateNodeInput(tree: NodeTree, nodeId: string, socketIndex: number, next: unknown): NodeTree {
+    const node = tree.nodes[nodeId]
+    if (!node) return tree
+    const inputs = [...(node.inputs as unknown[])]
+    const cur = inputs[socketIndex]
+    if (cur !== null && typeof cur === 'object' && !Array.isArray(cur) && cur !== undefined && 'name' in (cur as object)) {
+        inputs[socketIndex] = { ...(cur as object), value: next }
+    } else {
+        inputs[socketIndex] = next
+    }
+    return { ...tree, nodes: { ...tree.nodes, [nodeId]: { ...node, inputs } as NodeData } }
+}
+
+function updateNodeProperty(tree: NodeTree, nodeId: string, key: string, next: unknown): NodeTree {
+    const node = tree.nodes[nodeId]
+    if (!node) return tree
+    return { ...tree, nodes: { ...tree.nodes, [nodeId]: { ...node, properties: { ...node.properties, [key]: next } } } }
+}
+
+function updateNodePosition(tree: NodeTree, nodeId: string, x: number, y: number): NodeTree {
+    const node = tree.nodes[nodeId]
+    if (!node) return tree
+    const loc = node.location as unknown
+    let newLoc: unknown
+    if (Array.isArray(loc)) newLoc = [x, y]
+    else if (loc && typeof loc === 'object') newLoc = { ...(loc as object), x, y }
+    else newLoc = { x, y }
+    return { ...tree, nodes: { ...tree.nodes, [nodeId]: { ...node, location: newLoc } as NodeData } }
+}
 
 // Paste a node tree, inspect it visually. No publish flow on this page itself -
 // the "Publish" button hands off to /upload starting at step 2 (details).
@@ -19,6 +51,9 @@ export function ViewerPage() {
     const [linkCount, setLinkCount] = useState(0)
     const [selectedNode, setSelectedNode] = useState<string | null>(null)
     const [graphFullscreen, setGraphFullscreen] = useState(false)
+    const [dirty, setDirty] = useState(false)
+    const [applying, setApplying] = useState(false)
+    const [applyError, setApplyError] = useState<string | null>(null)
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
 
     useEffect(() => {
@@ -55,8 +90,45 @@ export function ViewerPage() {
     async function handlePaste() {
         try {
             const text = await navigator.clipboard.readText()
-            if (text) { setInput(text); trigger(text) }
+            if (text) { setInput(text); trigger(text); setDirty(false); setApplyError(null) }
         } catch { /* clipboard denied */ }
+    }
+
+    function handleInputChange(nodeId: string, socketIndex: number, next: unknown) {
+        setTree((t) => t ? updateNodeInput(t, nodeId, socketIndex, next) : t)
+        setDirty(true)
+    }
+
+    function handlePropertyChange(nodeId: string, key: string, next: unknown) {
+        setTree((t) => t ? updateNodeProperty(t, nodeId, key, next) : t)
+        setDirty(true)
+    }
+
+    function handleNodeMove(nodeId: string, x: number, y: number) {
+        setTree((t) => t ? updateNodePosition(t, nodeId, x, y) : t)
+        setDirty(true)
+    }
+
+    // Re-encode the edited tree back into the original format and write it to
+    // the source textarea. We always pipe via JSON because the python encoder
+    // takes a {nodes, links} dict and emits any target format.
+    async function applyEdits() {
+        if (!tree || !format) return
+        setApplying(true)
+        setApplyError(null)
+        try {
+            const jsonContent = JSON.stringify({ nodes: tree.nodes, links: tree.links })
+            const result = format === 'json'
+                ? { output: jsonContent }
+                : await api.convert(jsonContent, format, 'json')
+            setInput(result.output)
+            setRawInput(result.output)
+            setDirty(false)
+        } catch (e) {
+            setApplyError((e as Error).message || 'Failed to apply edits')
+        } finally {
+            setApplying(false)
+        }
     }
 
     function handlePublish() {
@@ -88,15 +160,29 @@ export function ViewerPage() {
                         Paste any node tree and see it rendered. Nothing is uploaded unless you publish.
                     </p>
                 </div>
-                <button
-                    type="button"
-                    onClick={handlePublish}
-                    disabled={!isValid}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-black hover:bg-[var(--color-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                    Publish this tree
-                </button>
+                <div className="flex items-center gap-2">
+                    {dirty && (
+                        <button
+                            type="button"
+                            onClick={applyEdits}
+                            disabled={applying}
+                            title="Re-encode the edited tree and write it back to the source textarea"
+                            className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-300 hover:bg-amber-500/20 disabled:opacity-50 cursor-pointer transition-colors"
+                        >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            {applying ? 'Applying…' : 'Apply changes'}
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        onClick={handlePublish}
+                        disabled={!isValid}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-black hover:bg-[var(--color-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                    >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                        Publish this tree
+                    </button>
+                </div>
             </div>
 
             <div className={`mt-6 grid gap-6 ${selectedNode && tree ? 'lg:grid-cols-[1fr_1.5fr_18rem]' : 'lg:grid-cols-[1fr_1.5fr]'}`}>
@@ -121,6 +207,9 @@ export function ViewerPage() {
                         spellCheck={false}
                         className="h-72 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 font-mono text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)] focus:outline-none resize-none"
                     />
+                    {applyError && (
+                        <p role="alert" className="text-xs text-red-400">{applyError}</p>
+                    )}
                     {hasInput && (
                         <div aria-live="polite" className="flex flex-wrap gap-2">
                             {format && (
@@ -153,6 +242,10 @@ export function ViewerPage() {
                                 className="h-full w-full"
                                 onNodeClick={(name) => setSelectedNode(name)}
                                 selectedNode={selectedNode}
+                                editable
+                                onInputChange={handleInputChange}
+                                onPropertyChange={handlePropertyChange}
+                                onNodeMove={handleNodeMove}
                             />
                             <button
                                 type="button"
@@ -216,6 +309,10 @@ export function ViewerPage() {
                             className="h-full w-full"
                             onNodeClick={(name) => setSelectedNode(name)}
                             selectedNode={selectedNode}
+                            editable
+                            onInputChange={handleInputChange}
+                            onPropertyChange={handlePropertyChange}
+                            onNodeMove={handleNodeMove}
                         />
                     </div>
                     {selectedNode && (

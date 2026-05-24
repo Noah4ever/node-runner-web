@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from 'reactflow'
+import { ScrubField } from './ScrubField'
 
 // Hidden handle style used by the compact node so edges can attach but the
 // dots don't visually appear.
@@ -36,6 +37,16 @@ export interface BlenderNodeData {
     properties: BlenderProperty[]
     /** Whether the node is currently selected (driven by parent) */
     isSelected: boolean
+    /** Whether inputs/properties can be edited inline. */
+    editable?: boolean
+    /** Called when an input default value changes. socketIndex is the position
+     *  in the inputs array (positional, not by name, because the same node can
+     *  have multiple sockets with the same name). */
+    onInputChange?: (nodeId: string, socketIndex: number, next: unknown) => void
+    /** Called when a property value changes. */
+    onPropertyChange?: (nodeId: string, key: string, next: unknown) => void
+    /** Id of this node, needed when invoking the callbacks above. */
+    nodeId: string
 }
 
 // Format a scalar/array for inline display inside the small value box on the
@@ -85,7 +96,7 @@ function socketStyle(color: string) {
 }
 
 function BlenderNodeImpl({ data }: NodeProps<BlenderNodeData>) {
-    const { title, subtitle, headerColor, inputs, outputs, properties, isSelected } = data
+    const { title, subtitle, headerColor, inputs, outputs, properties, isSelected, editable, onInputChange, onPropertyChange, nodeId } = data
 
     return (
         <div
@@ -150,27 +161,53 @@ function BlenderNodeImpl({ data }: NodeProps<BlenderNodeData>) {
             {/* Properties - inline dropdown-style cells between outputs and inputs */}
             {properties.length > 0 && (
                 <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {properties.map((p) => (
-                        <div
-                            key={p.key}
-                            title={`${p.key}: ${formatProperty(p.value)}`}
-                            style={{
-                                background: '#3a3a3a',
-                                border: '1px solid #1a1a1a',
-                                borderRadius: 3,
-                                padding: '2px 6px',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                gap: 6,
-                            }}
-                        >
-                            <span style={{ color: '#a0a0a0', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.key}</span>
-                            <span style={{ color: '#e5e5e5', fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100, textAlign: 'right' }}>
-                                {formatProperty(p.value)}
-                            </span>
-                        </div>
-                    ))}
+                    {properties.map((p) => {
+                        const isEditableNumber = editable && typeof p.value === 'number'
+                        const isEditableBool = editable && typeof p.value === 'boolean'
+                        return (
+                            <div
+                                key={p.key}
+                                className={isEditableNumber || isEditableBool ? 'nodrag' : undefined}
+                                title={`${p.key}: ${formatProperty(p.value)}`}
+                                style={{
+                                    background: '#3a3a3a',
+                                    border: '1px solid #1a1a1a',
+                                    borderRadius: 3,
+                                    padding: '2px 6px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                }}
+                            >
+                                {isEditableNumber ? (
+                                    <ScrubField
+                                        label={p.key}
+                                        value={p.value as number}
+                                        onChange={(v) => onPropertyChange?.(nodeId, p.key, v)}
+                                        className="flex-1"
+                                    />
+                                ) : isEditableBool ? (
+                                    <>
+                                        <span style={{ color: '#a0a0a0', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.key}</span>
+                                        <input
+                                            type="checkbox"
+                                            checked={p.value as boolean}
+                                            onChange={(e) => onPropertyChange?.(nodeId, p.key, e.target.checked)}
+                                            style={{ accentColor: '#fb8b1e', cursor: 'pointer' }}
+                                        />
+                                    </>
+                                ) : (
+                                    <>
+                                        <span style={{ color: '#a0a0a0', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.key}</span>
+                                        <span style={{ color: '#e5e5e5', fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100, textAlign: 'right' }}>
+                                            {formatProperty(p.value)}
+                                        </span>
+                                    </>
+                                )}
+                            </div>
+                        )
+                    })}
                 </div>
             )}
 
@@ -183,6 +220,7 @@ function BlenderNodeImpl({ data }: NodeProps<BlenderNodeData>) {
                         const formatted = !s.linked ? formatInline(s.value) : ''
                         const showValueBox = !s.linked && (s.kind === 'value' || s.kind === 'vector' || s.kind === 'bool' || s.kind === 'string') && formatted.length > 0
                         const showColorSwatch = !s.linked && s.kind === 'color' && Array.isArray(s.value)
+                        const isEditableScalar = editable && !s.linked && s.kind === 'value' && typeof s.value === 'number'
                         return (
                             <div
                                 key={`i-${i}-${s.name}`}
@@ -200,7 +238,29 @@ function BlenderNodeImpl({ data }: NodeProps<BlenderNodeData>) {
                                     id={s.name}
                                     style={socketStyle(s.color)}
                                 />
-                                {showValueBox || showColorSwatch ? (
+                                {isEditableScalar ? (
+                                    <div
+                                        className="nodrag"
+                                        style={{
+                                            display: 'flex',
+                                            flex: 1,
+                                            alignItems: 'center',
+                                            background: '#3a3a3a',
+                                            border: '1px solid #1a1a1a',
+                                            borderRadius: 3,
+                                            padding: '1px 6px',
+                                            minWidth: 0,
+                                        }}
+                                    >
+                                        <ScrubField
+                                            label={s.name}
+                                            value={s.value as number}
+                                            onChange={(v) => onInputChange?.(nodeId, i, v)}
+                                            integer={Number.isInteger(s.value as number) && (s.value as number) !== 0 ? false : false}
+                                            className="flex-1"
+                                        />
+                                    </div>
+                                ) : showValueBox || showColorSwatch ? (
                                     <div
                                         style={{
                                             display: 'flex',
