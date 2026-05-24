@@ -255,7 +255,14 @@ function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, se
                 zoomOnScroll
                 zoomOnPinch
                 zoomOnDoubleClick={!compact}
-                onNodeClick={onNodeClick ? (_e, node) => onNodeClick(node.id) : undefined}
+                onNodeClick={onNodeClick ? (e, node) => {
+                    // When the click came from an editable control inside the
+                    // node (scrub field, color picker, toggle), don't open the
+                    // inspector. Controls tag themselves with .nr-noselect.
+                    const target = e.target as HTMLElement | null
+                    if (target && target.closest('.nr-noselect')) return
+                    onNodeClick(node.id)
+                } : undefined}
                 onPaneClick={onNodeClick ? () => onNodeClick(null) : undefined}
             >
                 <Background color="#222" gap={20} size={1} />

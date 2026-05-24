@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useSocketNames } from '@/hooks/useApi'
+import { SocketEditor } from './SocketEditor'
 import type { NodeData, NodeLink, NodeTree } from '@node-runner/shared'
 
 interface NodeInspectorProps {
@@ -7,7 +8,28 @@ interface NodeInspectorProps {
     nodeName: string
     onClose: () => void
     onSelect?: (name: string) => void
+    /** When set, the inspector renders edit controls and emits changes. */
+    editable?: boolean
+    /** Positional input change. socketIndex matches the position in node.inputs. */
+    onInputChange?: (nodeId: string, socketIndex: number, next: unknown) => void
+    /** Property change by key. */
+    onPropertyChange?: (nodeId: string, key: string, next: unknown) => void
     className?: string
+}
+
+// Pick the right editor kind for a value. Tries to be robust about Blender's
+// occasional non-uniform shapes (scalar in a color slot, array for vector).
+function detectKind(value: unknown): 'number' | 'bool' | 'string' | 'color' | 'vector' | null {
+    if (value === null || value === undefined) return null
+    if (typeof value === 'boolean') return 'bool'
+    if (typeof value === 'number') return 'number'
+    if (typeof value === 'string') return 'string'
+    if (Array.isArray(value) && value.every((x) => typeof x === 'number')) {
+        if (value.length === 4 && value.every((x) => (x as number) >= 0 && (x as number) <= 1)) return 'color'
+        if (value.length === 3 && value.every((x) => (x as number) >= 0 && (x as number) <= 1)) return 'color'
+        if (value.length >= 2) return 'vector'
+    }
+    return null
 }
 
 // Pretty-print a value for the inspector. Arrays of numbers become "1.00, 2.00, 3.00".
@@ -56,7 +78,7 @@ function ValueCell({ value }: { value: unknown }) {
     return <span className="font-mono text-xs text-[var(--color-text)] break-all">{formatValue(value)}</span>
 }
 
-export function NodeInspector({ tree, nodeName, onClose, onSelect, className = '' }: NodeInspectorProps) {
+export function NodeInspector({ tree, nodeName, onClose, onSelect, editable, onInputChange, onPropertyChange, className = '' }: NodeInspectorProps) {
     const node = tree.nodes[nodeName] as NodeData | undefined
     const { data: socketNames } = useSocketNames()
 
@@ -203,6 +225,7 @@ export function NodeInspector({ tree, nodeName, onClose, onSelect, className = '
                             {inputs.map((raw, i) => {
                                 const { name, value } = extractSocket(raw, inputName(node.type, i))
                                 const isLinked = incoming.some((l) => l.toSocket === name)
+                                const kind = editable && !isLinked ? detectKind(value) : null
                                 return (
                                     <li key={i} className={`rounded border px-2 py-1.5 ${isLinked ? 'border-green-500/30 bg-green-500/5' : 'border-[var(--color-border)] bg-[var(--color-bg)]'}`}>
                                         <div className="flex items-center justify-between gap-2 mb-0.5">
@@ -211,7 +234,15 @@ export function NodeInspector({ tree, nodeName, onClose, onSelect, className = '
                                                 <span className="text-[9px] text-green-400">linked</span>
                                             )}
                                         </div>
-                                        <ValueCell value={value} />
+                                        {kind ? (
+                                            <SocketEditor
+                                                kind={kind}
+                                                value={value as never}
+                                                onChange={(v) => onInputChange?.(nodeName, i, v)}
+                                            />
+                                        ) : (
+                                            <ValueCell value={value} />
+                                        )}
                                     </li>
                                 )
                             })}
@@ -256,12 +287,25 @@ export function NodeInspector({ tree, nodeName, onClose, onSelect, className = '
                         <p className="text-xs text-[var(--color-text-faint)]">No properties</p>
                     ) : (
                         <dl className="space-y-1">
-                            {propertyEntries.map(([k, v]) => (
-                                <div key={k} className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5">
-                                    <dt className="text-[10px] font-mono text-[var(--color-text-faint)] mb-0.5">{k}</dt>
-                                    <dd><ValueCell value={v} /></dd>
-                                </div>
-                            ))}
+                            {propertyEntries.map(([k, v]) => {
+                                const kind = editable ? detectKind(v) : null
+                                return (
+                                    <div key={k} className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5">
+                                        <dt className="text-[10px] font-mono text-[var(--color-text-faint)] mb-0.5">{k}</dt>
+                                        <dd>
+                                            {kind ? (
+                                                <SocketEditor
+                                                    kind={kind}
+                                                    value={v as never}
+                                                    onChange={(nv) => onPropertyChange?.(nodeName, k, nv)}
+                                                />
+                                            ) : (
+                                                <ValueCell value={v} />
+                                            )}
+                                        </dd>
+                                    </div>
+                                )
+                            })}
                         </dl>
                     )}
                 </section>

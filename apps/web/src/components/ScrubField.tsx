@@ -141,7 +141,7 @@ export function ScrubField({
 
     if (editing) {
         return (
-            <div className={`flex items-center gap-1.5 ${className}`}>
+            <div className={`flex items-center gap-1.5 nodrag nr-noselect ${className}`} onClick={(e) => e.stopPropagation()}>
                 {label && <span style={{ color: '#a0a0a0', fontSize: 10, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>}
                 <input
                     ref={inputRef}
@@ -180,7 +180,8 @@ export function ScrubField({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
-            className={`select-none ${className}`}
+            onClick={(e) => e.stopPropagation()}
+            className={`select-none nodrag nr-noselect ${className}`}
             style={{
                 cursor: isScrubbing ? 'ew-resize' : 'col-resize',
                 display: 'flex',

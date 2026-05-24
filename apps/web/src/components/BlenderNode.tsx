@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from 'reactflow'
 import { ScrubField } from './ScrubField'
+import { SocketEditor } from './SocketEditor'
 
 // Hidden handle style used by the compact node so edges can attach but the
 // dots don't visually appear.
@@ -167,7 +168,8 @@ function BlenderNodeImpl({ data }: NodeProps<BlenderNodeData>) {
                         return (
                             <div
                                 key={p.key}
-                                className={isEditableNumber || isEditableBool ? 'nodrag' : undefined}
+                                className={isEditableNumber || isEditableBool ? 'nodrag nr-noselect' : undefined}
+                                onClick={isEditableNumber || isEditableBool ? (e) => e.stopPropagation() : undefined}
                                 title={`${p.key}: ${formatProperty(p.value)}`}
                                 style={{
                                     background: '#3a3a3a',
@@ -240,7 +242,8 @@ function BlenderNodeImpl({ data }: NodeProps<BlenderNodeData>) {
                                 />
                                 {isEditableScalar ? (
                                     <div
-                                        className="nodrag"
+                                        className="nodrag nr-noselect"
+                                        onClick={(e) => e.stopPropagation()}
                                         style={{
                                             display: 'flex',
                                             flex: 1,
@@ -275,7 +278,13 @@ function BlenderNodeImpl({ data }: NodeProps<BlenderNodeData>) {
                                         }}
                                     >
                                         <span style={{ color: '#e5e5e5', fontSize: 10, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
-                                        {showColorSwatch ? (
+                                        {showColorSwatch && editable ? (
+                                            <SocketEditor
+                                                kind="color"
+                                                value={s.value as number[]}
+                                                onChange={(v) => onInputChange?.(nodeId, i, v)}
+                                            />
+                                        ) : showColorSwatch ? (
                                             <span
                                                 style={{
                                                     background: rgbaToCss(s.value as number[]),

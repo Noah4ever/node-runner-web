@@ -319,6 +319,9 @@ export function ViewerPage() {
                         nodeName={selectedNode}
                         onClose={() => setSelectedNode(null)}
                         onSelect={(n) => setSelectedNode(n)}
+                        editable
+                        onInputChange={handleInputChange}
+                        onPropertyChange={handlePropertyChange}
                         className="h-[480px] hidden lg:flex"
                     />
                 )}
@@ -332,6 +335,9 @@ export function ViewerPage() {
                         nodeName={selectedNode}
                         onClose={() => setSelectedNode(null)}
                         onSelect={(n) => setSelectedNode(n)}
+                        editable
+                        onInputChange={handleInputChange}
+                        onPropertyChange={handlePropertyChange}
                         className="max-h-[480px]"
                     />
                 </div>
@@ -368,6 +374,9 @@ export function ViewerPage() {
                                 nodeName={selectedNode}
                                 onClose={() => setSelectedNode(null)}
                                 onSelect={(n) => setSelectedNode(n)}
+                                editable
+                                onInputChange={handleInputChange}
+                                onPropertyChange={handlePropertyChange}
                                 className="h-full border-0 rounded-none"
                             />
                         </div>
