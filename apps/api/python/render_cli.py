@@ -132,16 +132,27 @@ def build_material(tree: dict) -> "bpy.types.Material":
         except Exception:
             pass
 
-        # Set socket default_values from the positional inputs array.
+        # Set socket default_values. Prefer name-based lookup when the
+        # serialized entry carries a name (Blender 4.x style {name, value}),
+        # so version mismatches don't shift values across the wrong sockets.
+        # Fall back to positional only for raw scalar/array entries.
         for i, entry in enumerate(data.get("inputs", []) or []):
-            if i >= len(n.inputs):
-                break
-            value = entry["value"] if isinstance(entry, dict) and "value" in entry else entry
+            if isinstance(entry, dict) and "value" in entry:
+                value = entry.get("value")
+                sock_name = entry.get("name")
+            else:
+                value = entry
+                sock_name = None
             if value is None:
                 continue
-            try:
+            sock = None
+            if sock_name:
+                sock = n.inputs.get(sock_name)
+            if sock is None and i < len(n.inputs) and sock_name is None:
                 sock = n.inputs[i]
-                # default_value typing varies (float / vector / color). Trust the data shape.
+            if sock is None:
+                continue
+            try:
                 sock.default_value = value
             except Exception:
                 continue
