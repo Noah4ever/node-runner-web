@@ -15,6 +15,7 @@ import { ProfilePage } from '@/pages/ProfilePage'
 import { UserProfilePage } from '@/pages/UserProfilePage'
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
 import { AdminLoginPage } from '@/pages/AdminLoginPage'
+import { AdminDashboardPage } from '@/pages/AdminDashboardPage'
 import { PrivacyPage } from '@/pages/PrivacyPage'
 import { TermsPage } from '@/pages/TermsPage'
 
@@ -38,6 +39,7 @@ export function App() {
                     <Route path="signin" element={<SignInPage />} />
                     <Route path="auth/callback" element={<AuthCallbackPage />} />
                     <Route path="adminlogin" element={<AdminLoginPage />} />
+                    <Route path="admin" element={<AdminDashboardPage />} />
                     <Route path="profile" element={<ProfilePage />} />
                     <Route path="user/:userId" element={<UserProfilePage />} />
                     <Route path="privacy" element={<PrivacyPage />} />

@@ -13,9 +13,10 @@ function generateSlug(): string {
   return Math.random().toString(36).substring(2, 10)
 }
 
-const shareStore = new PersistedMap<Record<string, unknown>>('shares')
-const likesStore = new PersistedMapOfSets('likes')
-const savesStore = new PersistedMapOfSets('saves')
+// Exported so admin routes can iterate without re-loading the persisted map.
+export const shareStore = new PersistedMap<Record<string, unknown>>('shares')
+export const likesStore = new PersistedMapOfSets('likes')
+export const savesStore = new PersistedMapOfSets('saves')
 
 // Per-IP anonymous upload tracking
 const anonUploads = new Map<string, { count: number; resetAt: number }>()

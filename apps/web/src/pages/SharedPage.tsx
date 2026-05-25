@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { useGetShare, useToggleLike, useToggleSave, useDeleteShare, useToggleBan, useAuth } from '@/hooks/useApi'
+import { useGetShare, useToggleLike, useToggleSave, useDeleteShare, useToggleBan, useUpdateShare, useAuth } from '@/hooks/useApi'
 import { useAuthStore, useNodeStore } from '@/stores/nodeStore'
 import { NodeGraph } from '@/components/NodeGraph'
 import { NodeInspector } from '@/components/NodeInspector'
 import { UserAvatar } from '@/components/UserAvatar'
 import { InlineConvert } from '@/components/InlineConvert'
 import { CitationModal } from '@/components/CitationModal'
-import { ShaderPreview } from '@/components/ShaderPreview'
 import { HQRender } from '@/components/HQRender'
 import { LICENSE_INFO, type NodeLicense, type NodeTree, type NodeFormat } from '@node-runner/shared'
 
@@ -40,6 +39,7 @@ export function SharedPage() {
     const likeMutation = useToggleLike()
     const saveMutation = useToggleSave()
     const deleteMutation = useDeleteShare()
+    const updateMutation = useUpdateShare()
     const banMutation = useToggleBan()
     const { user: currentUser } = useAuth()
     const { token } = useAuthStore()
@@ -52,6 +52,11 @@ export function SharedPage() {
     const [graphFullscreen, setGraphFullscreen] = useState(false)
     const [selectedNode, setSelectedNode] = useState<string | null>(null)
     const [citeOpen, setCiteOpen] = useState(false)
+    const [editOpen, setEditOpen] = useState(false)
+    const [editTitle, setEditTitle] = useState('')
+    const [editDescription, setEditDescription] = useState('')
+    const [editTags, setEditTags] = useState('')
+    const [editLicense, setEditLicense] = useState<NodeLicense | ''>('')
 
     const pageImages = page?.images ?? []
 
@@ -118,6 +123,29 @@ export function SharedPage() {
         setRawInput(page.content)
         setDetectedFormat(page.format as NodeFormat)
         navigate('/editor')
+    }
+
+    function openEdit() {
+        if (!page) return
+        setEditTitle(page.title)
+        setEditDescription(page.description ?? '')
+        setEditTags((page.tags ?? []).join(', '))
+        setEditLicense((page.license as NodeLicense | undefined) ?? '')
+        setEditOpen(true)
+    }
+
+    function saveEdit() {
+        if (!page) return
+        const payload: { title: string; description: string; tags: string[]; license?: string } = {
+            title: editTitle.trim() || page.title,
+            description: editDescription.trim(),
+            tags: editTags.split(',').map((t) => t.trim()).filter(Boolean),
+        }
+        if (editLicense) payload.license = editLicense
+        updateMutation.mutate(
+            { id: page.slug, data: payload as never },
+            { onSuccess: () => setEditOpen(false) },
+        )
     }
 
     function handleLike() {
@@ -238,16 +266,6 @@ export function SharedPage() {
 
                 {/* Sidebar */}
                 <div className="space-y-4">
-                    {/* Shader preview - shown for shader trees; auto-detects via Material Output node */}
-                    {page.tree && (
-                        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                            <h3 className="mb-3 text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">Preview</h3>
-                            <div className="flex justify-center">
-                                <ShaderPreview tree={page.tree} size={220} />
-                            </div>
-                        </div>
-                    )}
-
                     {/* High-quality render via headless Blender on the server. */}
                     {page.tree && (
                         <HQRender content={page.content} format={page.format as NodeFormat} slug={page.slug} />
@@ -346,21 +364,21 @@ export function SharedPage() {
                     {/* Actions */}
                     <div className="flex flex-col gap-2">
                         <button
-                            onClick={handleOpenInEditor}
-                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-black hover:bg-[var(--color-accent-hover)] transition-colors cursor-pointer"
-                        >
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                            Open in editor
-                        </button>
-                        <button
                             onClick={handleCopyData}
-                            className={`inline-flex w-full items-center justify-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${copiedData ? 'border-green-500/40 text-green-400' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-text-faint)] hover:text-[var(--color-text)]'}`}
+                            className={`inline-flex w-full items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-colors cursor-pointer ${copiedData ? 'bg-green-600 text-white' : 'bg-[var(--color-accent)] text-black hover:bg-[var(--color-accent-hover)]'}`}
                         >
                             {copiedData ? (
                                 <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>Copied</>
                             ) : (
                                 <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>Copy Node Data</>
                             )}
+                        </button>
+                        <button
+                            onClick={handleOpenInEditor}
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)] transition-colors cursor-pointer"
+                        >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                            Open in editor
                         </button>
                         <button
                             onClick={handleCopyLink}
@@ -410,6 +428,13 @@ export function SharedPage() {
                         <div className="rounded-md border border-red-500/30 bg-red-500/5 p-4">
                             <h3 className="mb-3 text-xs font-semibold text-red-400 uppercase tracking-wide">Admin</h3>
                             <div className="flex flex-col gap-2">
+                                <button
+                                    onClick={openEdit}
+                                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)] transition-colors cursor-pointer"
+                                >
+                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                    Edit metadata
+                                </button>
                                 <button
                                     onClick={() => {
                                         if (!confirm('Delete this post?')) return
@@ -470,6 +495,75 @@ export function SharedPage() {
                             />
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Admin edit metadata modal */}
+            {editOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setEditOpen(false)}>
+                    <div className="w-full max-w-lg rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-base font-semibold">Edit metadata</h2>
+                            <button onClick={() => setEditOpen(false)} className="text-[var(--color-text-faint)] hover:text-[var(--color-text)] cursor-pointer" aria-label="Close">
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">Title</label>
+                                <input
+                                    type="text"
+                                    value={editTitle}
+                                    onChange={(e) => setEditTitle(e.target.value)}
+                                    className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm focus:border-[var(--color-accent)] focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">Description</label>
+                                <textarea
+                                    value={editDescription}
+                                    onChange={(e) => setEditDescription(e.target.value)}
+                                    rows={3}
+                                    className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm focus:border-[var(--color-accent)] focus:outline-none resize-y"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">Tags (comma-separated)</label>
+                                <input
+                                    type="text"
+                                    value={editTags}
+                                    onChange={(e) => setEditTags(e.target.value)}
+                                    className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm focus:border-[var(--color-accent)] focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--color-text-muted)] mb-1">License</label>
+                                <select
+                                    value={editLicense}
+                                    onChange={(e) => setEditLicense(e.target.value as NodeLicense | '')}
+                                    className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm focus:border-[var(--color-accent)] focus:outline-none"
+                                >
+                                    <option value="">(unchanged)</option>
+                                    {Object.entries(LICENSE_INFO).map(([key, info]) => (
+                                        <option key={key} value={key}>{info.short}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-5">
+                            <button
+                                type="button"
+                                onClick={() => setEditOpen(false)}
+                                className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                            >Cancel</button>
+                            <button
+                                type="button"
+                                onClick={saveEdit}
+                                disabled={updateMutation.isPending}
+                                className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-semibold text-black hover:bg-[var(--color-accent-hover)] disabled:opacity-60 cursor-pointer"
+                            >{updateMutation.isPending ? 'Saving…' : 'Save'}</button>
+                        </div>
+                    </div>
                 </div>
             )}
 

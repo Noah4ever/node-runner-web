@@ -88,6 +88,32 @@ export function getUserById(userId: string): { id: string; name: string | null; 
     return null
 }
 
+export interface AdminUserRow {
+    id: string
+    email: string
+    name: string | null
+    avatarUrl: string | null
+    provider: string
+    createdAt: string
+    banned: boolean
+}
+
+export function listAllUsers(): AdminUserRow[] {
+    const rows: AdminUserRow[] = []
+    for (const u of users.values()) {
+        rows.push({
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            avatarUrl: u.avatarUrl,
+            provider: u.provider,
+            createdAt: u.createdAt,
+            banned: bannedUsers.has(u.id),
+        })
+    }
+    return rows
+}
+
 export const authRoutes: FastifyPluginAsync = async (app) => {
     // Available auth providers
     app.get('/providers', async (_request, reply) => {

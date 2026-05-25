@@ -183,4 +183,19 @@ export const api = {
     request<{ unlimited: boolean; used: number; limit: number; resetAt: number }>(
       '/render/quota',
     ),
+
+  adminListShares: () =>
+    request<Array<Record<string, unknown>>>('/admin/shares'),
+
+  adminListUsers: () =>
+    request<Array<{ id: string; email: string; name: string | null; avatarUrl: string | null; provider: string; createdAt: string; banned: boolean }>>('/admin/users'),
+
+  adminStats: () =>
+    request<{ shares: number; publicShares: number; users: number; bannedUsers: number; totalLikes: number }>('/admin/stats'),
+
+  adminBan: (userId: string) =>
+    request<{ banned: boolean }>(`/admin/users/${encodeURIComponent(userId)}/ban`, { method: 'POST' }),
+
+  adminUnban: (userId: string) =>
+    request<{ banned: boolean }>(`/admin/users/${encodeURIComponent(userId)}/unban`, { method: 'POST' }),
 }
