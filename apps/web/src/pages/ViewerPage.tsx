@@ -4,7 +4,6 @@ import { useNodeStore } from '@/stores/nodeStore'
 import { api } from '@/lib/api'
 import { NodeGraph } from '@/components/NodeGraph'
 import { NodeInspector } from '@/components/NodeInspector'
-import { ShaderPreview } from '@/components/ShaderPreview'
 import { HQRender } from '@/components/HQRender'
 import { FORMAT_LABELS, type NodeFormat } from '@node-runner/shared'
 import type { NodeTree, NodeData } from '@node-runner/shared'
@@ -59,25 +58,25 @@ export function ViewerPage() {
     const [copied, setCopied] = useState(false)
     // Default to Source when there's nothing pasted yet so the user sees the
     // paste area immediately. As soon as a valid tree shows up we flip to
-    // Preview - unless the user has already manually picked a tab.
-    const [sidebarTab, setSidebarTab] = useState<'preview' | 'render' | 'inspector' | 'source'>(rawInput ? 'preview' : 'source')
+    // Render - unless the user has already manually picked a tab.
+    const [sidebarTab, setSidebarTab] = useState<'render' | 'inspector' | 'source'>(rawInput ? 'render' : 'source')
     const userPickedTab = useRef(false)
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
 
     // Auto-switch to the inspector tab when a node is selected; flip back to
-    // preview when it's cleared so the user isn't stuck on an empty inspector.
+    // render when it's cleared so the user isn't stuck on an empty inspector.
     useEffect(() => {
         if (selectedNode) setSidebarTab('inspector')
-        else if (sidebarTab === 'inspector') setSidebarTab('preview')
+        else if (sidebarTab === 'inspector') setSidebarTab('render')
     }, [selectedNode]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    // First time the tree becomes valid, switch from Source to Preview - but
+    // First time the tree becomes valid, switch from Source to Render - but
     // only if the user hasn't manually picked a tab in the meantime.
     const hasShownPreviewRef = useRef(false)
     useEffect(() => {
         if (hasShownPreviewRef.current || userPickedTab.current) return
         if (tree && Object.keys(tree.nodes).length > 0 && sidebarTab === 'source') {
-            setSidebarTab('preview')
+            setSidebarTab('render')
             hasShownPreviewRef.current = true
         }
     }, [tree, sidebarTab])
@@ -200,15 +199,6 @@ export function ViewerPage() {
     // the user flips to Preview / Inspector / Source and back.
     const sidebarPanels = (
         <>
-            <div className="p-3" style={{ display: sidebarTab === 'preview' ? 'block' : 'none' }}>
-                {tree ? (
-                    <div className="flex justify-center">
-                        <ShaderPreview tree={tree} size={260} />
-                    </div>
-                ) : (
-                    <p className="text-xs text-[var(--color-text-faint)] text-center py-8">Paste a tree to see the preview.</p>
-                )}
-            </div>
             <div className="p-3" style={{ display: sidebarTab === 'render' ? 'block' : 'none' }}>
                 {tree && format ? (
                     <HQRender content={input} format={format} slug={dirty ? 'editor-draft' : 'editor'} />
@@ -366,9 +356,8 @@ export function ViewerPage() {
                 {/* Sidebar with tabs */}
                 <aside className="flex flex-col rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden min-h-0">
                     <div className="flex border-b border-[var(--color-border)]" role="tablist">
-                        <TabBtn id="preview" label="Preview" />
                         <TabBtn id="render" label="Render" />
-                        <TabBtn id="inspector" label={selectedNode ? `Inspector` : 'Inspector'} disabled={!selectedNode || !tree} />
+                        <TabBtn id="inspector" label="Inspector" disabled={!selectedNode || !tree} />
                         <TabBtn id="source" label="Source" />
                     </div>
                     <div className="flex-1 overflow-y-auto min-h-0">

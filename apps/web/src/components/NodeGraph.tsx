@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import ReactFlow, { Background, Controls, MiniMap, Panel, useReactFlow, useNodesInitialized, ReactFlowProvider, type Node, type Edge } from 'reactflow'
+import ReactFlow, { Background, Controls, MiniMap, Panel, useReactFlow, useNodesInitialized, useNodesState, useEdgesState, ReactFlowProvider, type Node, type Edge } from 'reactflow'
 import 'reactflow/dist/style.css'
 import type { NodeTree } from '@node-runner/shared'
 import { BlenderNode, CompactNode, type BlenderNodeData, type BlenderSocket, type BlenderProperty } from './BlenderNode'
@@ -105,7 +105,12 @@ function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, se
     const [miniMapOpen, setMiniMapOpen] = useState(true)
     const { data: socketNames } = useSocketNames()
 
-    const { nodes, edges } = useMemo(() => {
+    // Build the nodes / edges arrays from the tree. Returned by useMemo so we
+    // only recompute when an input changes. The OUTPUT of this memo is the
+    // "source of truth" for ReactFlow's initial state; we then hand control
+    // to useNodesState so drag updates can update the local copy without
+    // waiting for the tree round-trip.
+    const built = useMemo(() => {
         const entries = Object.entries(tree.nodes)
         if (entries.length === 0) return { nodes: [], edges: [] }
 
@@ -221,7 +226,16 @@ function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, se
         return { nodes: flowNodes, edges: flowEdges }
     }, [tree, selectedNode, socketNames, compact, editable, onInputChange, onPropertyChange])
 
-    if (nodes.length === 0) {
+    // Hand the built nodes/edges to ReactFlow's controlled state so drag
+    // updates are reflected live. Without onNodesChange wired up, the node
+    // visually wouldn't move until release because our useMemo above keeps
+    // re-rendering from the static tree positions.
+    const [rfNodes, setRfNodes, onNodesChange] = useNodesState(built.nodes)
+    const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(built.edges)
+    useEffect(() => { setRfNodes(built.nodes) }, [built.nodes, setRfNodes])
+    useEffect(() => { setRfEdges(built.edges) }, [built.edges, setRfEdges])
+
+    if (built.nodes.length === 0) {
         return (
             <div className={`flex items-center justify-center text-sm text-[var(--color-text-faint)] ${className}`}>
                 No nodes to display
@@ -232,8 +246,10 @@ function NodeGraphInner({ tree, className = '', compact = false, onNodeClick, se
     return (
         <div className={className} style={{ minHeight: compact ? undefined : '300px' }}>
             <ReactFlow
-                nodes={nodes}
-                edges={edges}
+                nodes={rfNodes}
+                edges={rfEdges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 fitView

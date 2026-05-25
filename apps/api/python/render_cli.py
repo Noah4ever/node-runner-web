@@ -25,7 +25,7 @@ except ImportError:
     sys.exit(2)
 
 
-def parse_argv() -> tuple[str, str]:
+def parse_argv() -> tuple[str, str, str]:
     # Blender forwards arguments after `--` to the script via sys.argv.
     if "--" in sys.argv:
         idx = sys.argv.index("--")
@@ -33,33 +33,86 @@ def parse_argv() -> tuple[str, str]:
     else:
         args = []
     if len(args) < 2:
-        sys.stderr.write("usage: render_cli.py -- <input.json> <output.png>\n")
+        sys.stderr.write("usage: render_cli.py -- <input.json> <output.png> [object]\n")
         sys.exit(2)
-    return args[0], args[1]
+    shape = args[2] if len(args) >= 3 else "sphere"
+    return args[0], args[1], shape
 
 
-def setup_scene(kind: str = "shader") -> None:
-    """Clear defaults, drop in the base object appropriate to the tree kind,
-    add camera + three-light setup."""
+def _add_primitive(shape: str, kind: str) -> str:
+    """Create the requested primitive. Returns the object name."""
+    s = (shape or "sphere").lower()
+    if s == "cube":
+        bpy.ops.mesh.primitive_cube_add(size=1.6)
+        name = "PreviewCube"
+        bpy.context.active_object.name = name
+        # Subdivide a bunch so geometry-node modifiers have vertex density.
+        if kind == "geometry":
+            try:
+                bpy.ops.object.mode_set(mode="EDIT")
+                bpy.ops.mesh.subdivide(number_cuts=10)
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except Exception:
+                pass
+        return name
+    if s == "plane":
+        bpy.ops.mesh.primitive_plane_add(size=2)
+        name = "PreviewPlane"
+        bpy.context.active_object.name = name
+        if kind == "geometry":
+            try:
+                bpy.ops.object.mode_set(mode="EDIT")
+                bpy.ops.mesh.subdivide(number_cuts=20)
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except Exception:
+                pass
+        return name
+    if s == "cylinder":
+        bpy.ops.mesh.primitive_cylinder_add(radius=0.9, depth=1.8, vertices=64)
+        name = "PreviewCylinder"
+        bpy.context.active_object.name = name
+        bpy.ops.object.shade_smooth()
+        return name
+    if s == "torus":
+        bpy.ops.mesh.primitive_torus_add(major_radius=1, minor_radius=0.35, major_segments=64, minor_segments=24)
+        name = "PreviewTorus"
+        bpy.context.active_object.name = name
+        bpy.ops.object.shade_smooth()
+        return name
+    if s == "monkey":
+        bpy.ops.mesh.primitive_monkey_add(size=1.4)
+        name = "PreviewMonkey"
+        bpy.context.active_object.name = name
+        bpy.ops.object.shade_smooth()
+        # Subdivision surface to smooth it
+        try:
+            mod = bpy.context.active_object.modifiers.new("Subsurf", type="SUBSURF")
+            mod.levels = 2
+        except Exception:
+            pass
+        return name
+    # Default: sphere
+    if kind == "geometry":
+        bpy.ops.mesh.primitive_ico_sphere_add(radius=1, subdivisions=4)
+        name = "PreviewBase"
+    else:
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=1, segments=64, ring_count=32)
+        name = "PreviewSphere"
+    bpy.context.active_object.name = name
+    bpy.ops.object.shade_smooth()
+    return name
+
+
+def setup_scene(kind: str = "shader", shape: str = "sphere") -> str:
+    """Clear defaults, drop in the requested primitive, add camera + lights.
+    Returns the name of the base object."""
     scene = bpy.context.scene
 
     # Wipe default objects so we start clean.
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
 
-    if kind == "geometry":
-        # An ico sphere with subdivisions gives the modifier enough vertex
-        # density that deformation-style trees (SetPosition + noise) actually
-        # show something. Plane is too flat; cube too low-poly.
-        bpy.ops.mesh.primitive_ico_sphere_add(radius=1, subdivisions=4)
-        base = bpy.context.active_object
-        base.name = "PreviewBase"
-        bpy.ops.object.shade_smooth()
-    else:
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=1, segments=64, ring_count=32)
-        base = bpy.context.active_object
-        base.name = "PreviewSphere"
-        bpy.ops.object.shade_smooth()
+    base_name = _add_primitive(shape, kind)
 
     # Camera - track-to-origin so we don't fight with euler angles.
     import mathutils  # noqa: PLC0415 - bpy ships with this
@@ -102,6 +155,8 @@ def setup_scene(kind: str = "shader") -> None:
         scene.eevee.taa_render_samples = 16
     except Exception:
         pass
+
+    return base_name
 
 
 def normalize_tree_shape(tree):
@@ -556,7 +611,7 @@ def build_geometry_modifier_group(tree: dict):
 
 
 def main() -> int:
-    input_path, output_path = parse_argv()
+    input_path, output_path, shape = parse_argv()
 
     try:
         with open(input_path, "r") as f:
@@ -575,20 +630,16 @@ def main() -> int:
         return 6
 
     try:
-        setup_scene(kind)
+        base_name = setup_scene(kind, shape)
+        base = bpy.data.objects.get(base_name)
+        if base is None:
+            sys.stderr.write(f"{base_name} missing after setup\n")
+            return 4
         if kind == "shader":
             mat = build_material(tree)
-            base = bpy.data.objects.get("PreviewSphere")
-            if base is None:
-                sys.stderr.write("PreviewSphere missing after setup\n")
-                return 4
             base.data.materials.clear()
             base.data.materials.append(mat)
         elif kind == "geometry":
-            base = bpy.data.objects.get("PreviewBase")
-            if base is None:
-                sys.stderr.write("PreviewBase missing after setup\n")
-                return 4
             group = build_geometry_modifier_group(tree)
             mod = base.modifiers.new("NodeRunnerPreview", type="NODES")
             mod.node_group = group

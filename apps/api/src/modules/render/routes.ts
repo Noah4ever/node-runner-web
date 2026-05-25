@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { fail } from '../../lib/response.js'
-import { renderShader, RenderError, NoShaderError } from '../../lib/blenderRender.js'
+import { renderShader, RenderError, NoShaderError, type RenderShape } from '../../lib/blenderRender.js'
 import { pythonConvert, type NodeFormat } from '../../lib/pythonConverter.js'
 import { getUserFromRequest } from '../auth/routes.js'
 
@@ -10,6 +10,7 @@ const renderRequestSchema = z.object({
     // convert via Python first. Most callers will pass content+format.
     content: z.string().min(1).max(200_000),
     format: z.enum(['hash', 'json', 'xml', 'ai_json']),
+    shape: z.enum(['sphere', 'cube', 'plane', 'cylinder', 'torus', 'monkey']).optional(),
 })
 
 export const renderRoutes: FastifyPluginAsync = async (app) => {
@@ -38,9 +39,10 @@ export const renderRoutes: FastifyPluginAsync = async (app) => {
             return fail(reply, 'VALIDATION_ERROR', parsed.error.issues[0].message)
         }
 
-        const { content, format } = parsed.data
+        const { content, format, shape } = parsed.data
         const user = getUserFromRequest(request)
         const isAdmin = !!user?.isAdmin
+        const renderShape: RenderShape = (shape ?? 'sphere') as RenderShape
 
         // Normalize to JSON for the renderer - it expects a {nodes, links} dict.
         let jsonContent: string
@@ -56,7 +58,7 @@ export const renderRoutes: FastifyPluginAsync = async (app) => {
         }
 
         try {
-            const { png, cached, hash } = await renderShader(jsonContent)
+            const { png, cached, hash } = await renderShader(jsonContent, renderShape)
             // Admins bypass the quota entirely; others get budgeted, cache
             // hits always free. Charge happens AFTER the render so we don't
             // accept a quota miss only to then fail on render.

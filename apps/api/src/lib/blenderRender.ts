@@ -41,16 +41,20 @@ export class NoShaderError extends RenderError {
     }
 }
 
-function hashContent(jsonContent: string): string {
-    return createHash('sha256').update(jsonContent).digest('hex').slice(0, 24)
+export type RenderShape = 'sphere' | 'cube' | 'plane' | 'cylinder' | 'torus' | 'monkey'
+
+function hashContent(jsonContent: string, shape: RenderShape): string {
+    // Shape is part of the cache key - same tree on cube vs sphere are
+    // different renders.
+    return createHash('sha256').update(jsonContent).update('\0').update(shape).digest('hex').slice(0, 24)
 }
 
 // Single-flight: if two requests come in for the same content while one is
 // already rendering, the second one waits on the first's promise.
 const inFlight = new Map<string, Promise<Buffer>>()
 
-export async function renderShader(jsonContent: string): Promise<{ png: Buffer; cached: boolean; hash: string }> {
-    const hash = hashContent(jsonContent)
+export async function renderShader(jsonContent: string, shape: RenderShape = 'sphere'): Promise<{ png: Buffer; cached: boolean; hash: string }> {
+    const hash = hashContent(jsonContent, shape)
     const cachedPath = join(CACHE_DIR, `${hash}.png`)
     if (existsSync(cachedPath)) {
         return { png: readFileSync(cachedPath), cached: true, hash }
@@ -67,7 +71,7 @@ export async function renderShader(jsonContent: string): Promise<{ png: Buffer; 
         const outputPath = cachedPath
         writeFileSync(inputPath, jsonContent, 'utf8')
         try {
-            await runBlender(inputPath, outputPath)
+            await runBlender(inputPath, outputPath, shape)
             if (!existsSync(outputPath)) {
                 throw new RenderError('Blender exited without producing output PNG')
             }
@@ -86,7 +90,7 @@ export async function renderShader(jsonContent: string): Promise<{ png: Buffer; 
     }
 }
 
-function runBlender(inputPath: string, outputPath: string): Promise<void> {
+function runBlender(inputPath: string, outputPath: string, shape: RenderShape): Promise<void> {
     return new Promise((resolveOk, reject) => {
         const blenderArgs = [
             '--background',
@@ -95,6 +99,7 @@ function runBlender(inputPath: string, outputPath: string): Promise<void> {
             '--',
             inputPath,
             outputPath,
+            shape,
         ]
         // xvfb-run wraps the command in a virtual display server so Eevee has
         // a GL context. We use auto-servernum so concurrent renders don't
