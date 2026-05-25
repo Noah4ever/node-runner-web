@@ -57,7 +57,11 @@ export function ViewerPage() {
     const [applying, setApplying] = useState(false)
     const [applyError, setApplyError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
-    const [sidebarTab, setSidebarTab] = useState<'preview' | 'render' | 'inspector' | 'source'>('preview')
+    // Default to Source when there's nothing pasted yet so the user sees the
+    // paste area immediately. As soon as a valid tree shows up we flip to
+    // Preview - unless the user has already manually picked a tab.
+    const [sidebarTab, setSidebarTab] = useState<'preview' | 'render' | 'inspector' | 'source'>(rawInput ? 'preview' : 'source')
+    const userPickedTab = useRef(false)
     const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
 
     // Auto-switch to the inspector tab when a node is selected; flip back to
@@ -66,6 +70,22 @@ export function ViewerPage() {
         if (selectedNode) setSidebarTab('inspector')
         else if (sidebarTab === 'inspector') setSidebarTab('preview')
     }, [selectedNode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // First time the tree becomes valid, switch from Source to Preview - but
+    // only if the user hasn't manually picked a tab in the meantime.
+    const hasShownPreviewRef = useRef(false)
+    useEffect(() => {
+        if (hasShownPreviewRef.current || userPickedTab.current) return
+        if (tree && Object.keys(tree.nodes).length > 0 && sidebarTab === 'source') {
+            setSidebarTab('preview')
+            hasShownPreviewRef.current = true
+        }
+    }, [tree, sidebarTab])
+
+    function pickTab(t: typeof sidebarTab) {
+        userPickedTab.current = true
+        setSidebarTab(t)
+    }
 
     useEffect(() => {
         if (!graphFullscreen) return
@@ -174,91 +194,96 @@ export function ViewerPage() {
     const isValid = tree !== null && Object.keys(tree.nodes).length > 0
 
     // ---- sidebar tab content ----
-    // Pulled out so the JSX for the desktop layout below stays scannable.
+    // We keep ALL panels mounted and toggle visibility via CSS instead of
+    // conditional rendering. That preserves component state across tab
+    // switches - critical for HQRender so a rendered image survives when
+    // the user flips to Preview / Inspector / Source and back.
     const sidebarPanels = (
         <>
-            {sidebarTab === 'preview' && (
-                <div className="p-3">
-                    {tree ? (
-                        <div className="flex justify-center">
-                            <ShaderPreview tree={tree} size={260} />
-                        </div>
-                    ) : (
-                        <p className="text-xs text-[var(--color-text-faint)] text-center py-8">Paste a tree to see the preview.</p>
-                    )}
-                </div>
-            )}
-            {sidebarTab === 'render' && (
-                <div className="p-3">
-                    {tree && format ? (
-                        <HQRender content={input} format={format} slug={dirty ? 'editor-draft' : 'editor'} />
-                    ) : (
-                        <p className="text-xs text-[var(--color-text-faint)] text-center py-8">Paste a tree to enable HQ render.</p>
-                    )}
-                </div>
-            )}
-            {sidebarTab === 'inspector' && selectedNode && tree && (
-                <NodeInspector
-                    tree={tree}
-                    nodeName={selectedNode}
-                    onClose={() => setSelectedNode(null)}
-                    onSelect={(n) => setSelectedNode(n)}
-                    editable
-                    onInputChange={handleInputChange}
-                    onPropertyChange={handlePropertyChange}
-                    className="h-full border-0 rounded-none"
-                />
-            )}
-            {sidebarTab === 'source' && (
-                <div className="p-3 flex flex-col gap-2">
-                    <div className="flex items-center justify-end gap-1.5">
-                        <button
-                            type="button"
-                            onClick={handleCopy}
-                            disabled={!input.trim()}
-                            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${copied ? 'border-green-500/40 text-green-400' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)]'}`}
-                        >
-                            {copied ? 'Copied' : 'Copy'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handlePaste}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)] cursor-pointer transition-colors"
-                        >
-                            Paste
-                        </button>
+            <div className="p-3" style={{ display: sidebarTab === 'preview' ? 'block' : 'none' }}>
+                {tree ? (
+                    <div className="flex justify-center">
+                        <ShaderPreview tree={tree} size={260} />
                     </div>
-                    <textarea
-                        id="viewer-input"
-                        value={input}
-                        onChange={(e) => { setInput(e.target.value); trigger(e.target.value) }}
-                        placeholder="Paste Hash, JSON, XML, or AI JSON node data…"
-                        spellCheck={false}
-                        className="flex-1 min-h-[260px] w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)] focus:outline-none resize-none"
+                ) : (
+                    <p className="text-xs text-[var(--color-text-faint)] text-center py-8">Paste a tree to see the preview.</p>
+                )}
+            </div>
+            <div className="p-3" style={{ display: sidebarTab === 'render' ? 'block' : 'none' }}>
+                {tree && format ? (
+                    <HQRender content={input} format={format} slug={dirty ? 'editor-draft' : 'editor'} />
+                ) : (
+                    <p className="text-xs text-[var(--color-text-faint)] text-center py-8">Paste a tree to enable HQ render.</p>
+                )}
+            </div>
+            <div className="h-full" style={{ display: sidebarTab === 'inspector' && selectedNode && tree ? 'block' : 'none' }}>
+                {selectedNode && tree && (
+                    <NodeInspector
+                        tree={tree}
+                        nodeName={selectedNode}
+                        onClose={() => setSelectedNode(null)}
+                        onSelect={(n) => setSelectedNode(n)}
+                        editable
+                        onInputChange={handleInputChange}
+                        onPropertyChange={handlePropertyChange}
+                        className="h-full border-0 rounded-none"
                     />
-                    {hasInput && (
-                        <div className="flex flex-wrap gap-1.5 text-[10px]">
-                            {format && (
-                                <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">
-                                    {FORMAT_LABELS[format]}
-                                </span>
-                            )}
-                            <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">{nodeCount} nodes</span>
-                            <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">{linkCount} links</span>
-                            <span className={`rounded border px-2 py-0.5 font-semibold ${isValid ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
-                                {isValid ? 'valid' : 'invalid'}
-                            </span>
-                        </div>
-                    )}
+                )}
+            </div>
+            <div className="p-3 flex flex-col gap-2 h-full" style={{ display: sidebarTab === 'source' ? 'flex' : 'none' }}>
+                {!hasInput && (
+                    <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-bg)] p-3 text-xs text-[var(--color-text-muted)] space-y-2">
+                        <p className="font-semibold text-[var(--color-text)]">Paste a node setup to get started.</p>
+                        <p>Export from the Node Runner Blender add-on (Hash, JSON, XML, or AI JSON), or paste any compatible JSON. The graph, preview, and HQ render update live.</p>
+                    </div>
+                )}
+                <div className="flex items-center justify-end gap-1.5">
+                    <button
+                        type="button"
+                        onClick={handleCopy}
+                        disabled={!input.trim()}
+                        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${copied ? 'border-green-500/40 text-green-400' : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)]'}`}
+                    >
+                        {copied ? 'Copied' : 'Copy'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handlePaste}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-text-faint)] cursor-pointer transition-colors"
+                    >
+                        Paste
+                    </button>
                 </div>
-            )}
+                <textarea
+                    id="viewer-input"
+                    value={input}
+                    onChange={(e) => { setInput(e.target.value); trigger(e.target.value) }}
+                    placeholder="Paste Hash, JSON, XML, or AI JSON node data…"
+                    spellCheck={false}
+                    className="flex-1 min-h-[260px] w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-3 font-mono text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] focus:border-[var(--color-accent)] focus:outline-none resize-none"
+                />
+                {hasInput && (
+                    <div className="flex flex-wrap gap-1.5 text-[10px]">
+                        {format && (
+                            <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">
+                                {FORMAT_LABELS[format]}
+                            </span>
+                        )}
+                        <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">{nodeCount} nodes</span>
+                        <span className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5">{linkCount} links</span>
+                        <span className={`rounded border px-2 py-0.5 font-semibold ${isValid ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-red-500/30 bg-red-500/10 text-red-400'}`}>
+                            {isValid ? 'valid' : 'invalid'}
+                        </span>
+                    </div>
+                )}
+            </div>
         </>
     )
 
     const TabBtn = ({ id, label, disabled = false }: { id: typeof sidebarTab; label: string; disabled?: boolean }) => (
         <button
             type="button"
-            onClick={() => setSidebarTab(id)}
+            onClick={() => pickTab(id)}
             disabled={disabled}
             className={`flex-1 px-2 py-2 text-xs font-medium border-b-2 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${sidebarTab === id ? 'text-[var(--color-text)] border-[var(--color-accent)]' : 'text-[var(--color-text-muted)] border-transparent hover:text-[var(--color-text)]'}`}
         >
