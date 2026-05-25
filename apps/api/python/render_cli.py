@@ -142,17 +142,67 @@ def setup_scene(kind: str = "shader", shape: str = "sphere") -> str:
         lo.location = loc
         scene.collection.objects.link(lo)
 
-    # Render settings: Eevee for speed, transparent background, modest samples.
+    # World - a soft gradient sky that gives transmissive materials something
+    # to refract through, and adds ambient bounce light for opaque ones. Built
+    # via a Sky Texture (Eevee supports it) with a fallback to a flat grey.
+    if scene.world is None:
+        scene.world = bpy.data.worlds.new("PreviewWorld")
+    world = scene.world
+    world.use_nodes = True
+    wnt = world.node_tree
+    for n in list(wnt.nodes):
+        wnt.nodes.remove(n)
+    try:
+        out = wnt.nodes.new("ShaderNodeOutputWorld")
+        bg = wnt.nodes.new("ShaderNodeBackground")
+        sky = wnt.nodes.new("ShaderNodeTexSky")
+        # Use the cheaper Nishita preset with a low sun so it's not blown out.
+        try:
+            sky.sky_type = "NISHITA"
+            sky.sun_elevation = 0.6
+            sky.sun_rotation = 2.0
+            sky.air_density = 1.0
+            sky.dust_density = 1.5
+            sky.ozone_density = 1.0
+        except Exception:
+            pass
+        bg.inputs["Strength"].default_value = 0.6
+        wnt.links.new(sky.outputs[0], bg.inputs[0])
+        wnt.links.new(bg.outputs[0], out.inputs[0])
+    except Exception:
+        # Fallback: a single dim background colour
+        out = wnt.nodes.new("ShaderNodeOutputWorld")
+        bg = wnt.nodes.new("ShaderNodeBackground")
+        bg.inputs[0].default_value = (0.15, 0.18, 0.22, 1.0)
+        bg.inputs["Strength"].default_value = 0.5
+        wnt.links.new(bg.outputs[0], out.inputs[0])
+
+    # Render settings: Eevee for speed, modest samples. We keep the world
+    # background OPAQUE (film_transparent=False) so transmissive shaders
+    # actually have something to refract through; without that the sphere
+    # ends up nearly black on a transparent backplate.
     scene.render.resolution_x = 512
     scene.render.resolution_y = 512
     scene.render.resolution_percentage = 100
-    scene.render.film_transparent = True
+    scene.render.film_transparent = False
     try:
         scene.render.engine = "BLENDER_EEVEE_NEXT"  # Blender 4.x
     except Exception:
         scene.render.engine = "BLENDER_EEVEE"       # Blender 3.x
     try:
         scene.eevee.taa_render_samples = 16
+    except Exception:
+        pass
+    # Screen-space refraction + reflection so glass / water / transmissive
+    # materials show through their bumps. Eevee Next exposes these on
+    # scene.eevee.use_raytracing; classic Eevee uses use_ssr / use_ssr_refraction.
+    try:
+        scene.eevee.use_raytracing = True  # Eevee Next
+    except Exception:
+        pass
+    try:
+        scene.eevee.use_ssr = True
+        scene.eevee.use_ssr_refraction = True
     except Exception:
         pass
 
@@ -329,6 +379,34 @@ def has_geometry_nodes(tree: dict) -> bool:
         if t.startswith("GeometryNode"):
             return True
     return False
+
+
+def material_uses_transmission(tree: dict) -> bool:
+    """True if the shader needs refraction enabled.
+
+    Triggers on: Glass / Refraction / Transparent BSDFs; Principled BSDF
+    with non-zero Transmission Weight (any version) or Alpha < 1; or any
+    use of a Volume node alongside a surface BSDF (water-style setups)."""
+    has_volume = False
+    for n in (tree.get("nodes") or {}).values():
+        if not isinstance(n, dict):
+            continue
+        t = n.get("type", "")
+        if t in ("ShaderNodeBsdfGlass", "ShaderNodeBsdfRefraction", "ShaderNodeBsdfTransparent"):
+            return True
+        if t.startswith("ShaderNodeVolume"):
+            has_volume = True
+        if t == "ShaderNodeBsdfPrincipled":
+            for entry in (n.get("inputs") or []):
+                if isinstance(entry, dict):
+                    name = entry.get("name", "")
+                    value = entry.get("value")
+                    # Transmission Weight (4.x) or Transmission (3.x)
+                    if name in ("Transmission Weight", "Transmission") and isinstance(value, (int, float)) and value > 0.01:
+                        return True
+                    if name == "Alpha" and isinstance(value, (int, float)) and value < 0.99:
+                        return True
+    return has_volume
 
 
 def tree_kind(tree: dict) -> str:
@@ -639,6 +717,30 @@ def main() -> int:
             mat = build_material(tree)
             base.data.materials.clear()
             base.data.materials.append(mat)
+            # Enable per-material screen-space refraction when the tree
+            # contains a transmissive node. Without this Eevee won't refract
+            # through the surface, making glass/water materials read as black.
+            try:
+                if material_uses_transmission(tree):
+                    # Eevee Next
+                    if hasattr(mat, "use_raytrace_refraction"):
+                        mat.use_raytrace_refraction = True
+                    # Legacy Eevee
+                    if hasattr(mat, "use_screen_refraction"):
+                        mat.use_screen_refraction = True
+                    # Set blend mode so transparency is processed correctly
+                    if hasattr(mat, "blend_method"):
+                        try:
+                            mat.blend_method = "BLEND"
+                        except Exception:
+                            pass
+                    if hasattr(mat, "surface_render_method"):
+                        try:
+                            mat.surface_render_method = "BLENDED"
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         elif kind == "geometry":
             group = build_geometry_modifier_group(tree)
             mod = base.modifiers.new("NodeRunnerPreview", type="NODES")
