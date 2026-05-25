@@ -189,13 +189,23 @@ def setup_scene(kind: str = "shader", shape: str = "sphere") -> str:
         scene.render.engine = "BLENDER_EEVEE_NEXT"  # Blender 4.x
     except Exception:
         scene.render.engine = "BLENDER_EEVEE"       # Blender 3.x
+    # Fewer samples = faster software-rendered Eevee on headless servers.
+    # 8 is still plenty for a small 512x512 preview.
     try:
-        scene.eevee.taa_render_samples = 16
+        scene.eevee.taa_render_samples = 8
     except Exception:
         pass
-    # Screen-space refraction + reflection so glass / water / transmissive
-    # materials show through their bumps. Eevee Next exposes these on
-    # scene.eevee.use_raytracing; classic Eevee uses use_ssr / use_ssr_refraction.
+    # Raytracing / SSR are OPT-IN per render now. setup_scene leaves them off
+    # so opaque shaders don't pay the cost; main() enables them only when
+    # material_uses_transmission(tree) returns true.
+
+    return base_name
+
+
+def enable_refraction(scene) -> None:
+    """Turn on Eevee's screen-space refraction + raytracing. Called only when
+    the material actually needs it - on a software-rendered headless server,
+    raytracing alone can take a 3s render to 60s+, so we keep it gated."""
     try:
         scene.eevee.use_raytracing = True  # Eevee Next
     except Exception:
@@ -205,8 +215,6 @@ def setup_scene(kind: str = "shader", shape: str = "sphere") -> str:
         scene.eevee.use_ssr_refraction = True
     except Exception:
         pass
-
-    return base_name
 
 
 def normalize_tree_shape(tree):
@@ -717,28 +725,22 @@ def main() -> int:
             mat = build_material(tree)
             base.data.materials.clear()
             base.data.materials.append(mat)
-            # Enable per-material screen-space refraction when the tree
-            # contains a transmissive node. Without this Eevee won't refract
-            # through the surface, making glass/water materials read as black.
+            # Refraction is OPT-IN per render because raytracing is
+            # expensive on software-rendered Eevee. Only enable when the tree
+            # is actually transmissive.
             try:
                 if material_uses_transmission(tree):
-                    # Eevee Next
+                    enable_refraction(bpy.context.scene)
                     if hasattr(mat, "use_raytrace_refraction"):
                         mat.use_raytrace_refraction = True
-                    # Legacy Eevee
                     if hasattr(mat, "use_screen_refraction"):
                         mat.use_screen_refraction = True
-                    # Set blend mode so transparency is processed correctly
                     if hasattr(mat, "blend_method"):
-                        try:
-                            mat.blend_method = "BLEND"
-                        except Exception:
-                            pass
+                        try: mat.blend_method = "BLEND"
+                        except Exception: pass
                     if hasattr(mat, "surface_render_method"):
-                        try:
-                            mat.surface_render_method = "BLENDED"
-                        except Exception:
-                            pass
+                        try: mat.surface_render_method = "BLENDED"
+                        except Exception: pass
             except Exception:
                 pass
         elif kind == "geometry":

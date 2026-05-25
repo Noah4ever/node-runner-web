@@ -20,10 +20,11 @@ const BLENDER_BIN = process.env.BLENDER_BIN ?? 'blender'
 // On headless Linux Eevee needs a GL context; xvfb-run provides a virtual
 // display. macOS/dev users have a real display so wrapping isn't needed.
 const USE_XVFB = process.env.BLENDER_USE_XVFB !== '0' && process.platform === 'linux'
-// Cap renders so a slow Cycles render or hung Blender process can't tie up
-// the API thread forever. Blender 4.5 cold-start under xvfb is ~25-40s,
-// then the render itself is sub-second for simple shaders.
-const RENDER_TIMEOUT_MS = 110_000
+// Cap renders so a hung Blender process can't tie up the API thread forever.
+// Software-rendered Eevee on xvfb is much slower than GPU Eevee - cold-start
+// plus a complex shader (high-detail noise, multiple ramps, bumps) can take
+// a couple of minutes. 4 minutes is the soft ceiling.
+const RENDER_TIMEOUT_MS = 240_000
 
 mkdirSync(CACHE_DIR, { recursive: true })
 

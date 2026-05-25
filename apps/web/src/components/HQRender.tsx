@@ -29,13 +29,11 @@ function formatResetTime(resetAt: number): string {
     return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`
 }
 
-// Estimated render durations (sec) - used to drive the progress bar speed.
-// First fresh render of a server-cold-start takes ~30-50s; subsequent ones
-// are much faster. Cached returns near-instant. We don't have a true
-// progress channel from blender, so the bar fakes it up to 95% over the
-// expected time then snaps to 100% on completion.
-const EXPECTED_FRESH_MS = 35_000
-const EXPECTED_CACHED_MS = 800
+// Used to pace the fake progress bar. Software-rendered Eevee on the
+// headless server varies wildly with shader complexity (simple metals
+// land sub-10s, high-detail noise + transmission can hit 1-2 minutes).
+// We pick a middle expected duration; bar tweens to 0.95 over this period.
+const EXPECTED_FRESH_MS = 45_000
 
 export function HQRender({ content, format, slug }: HQRenderProps) {
     const [busy, setBusy] = useState(false)
@@ -127,10 +125,6 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
         setError('Could not display the rendered image. Try Re-render.')
     }
 
-    // Show how long the current render has been running so the user knows
-    // it's still working during the cold-start window.
-    const expectedSec = imageUrl ? EXPECTED_CACHED_MS / 1000 : EXPECTED_FRESH_MS / 1000
-
     return (
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -167,9 +161,6 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
                             style={{ width: `${(progress * 100).toFixed(1)}%` }}
                         />
                     </div>
-                    <p className="mt-1 text-[10px] text-[var(--color-text-faint)] text-center">
-                        Rendering in Blender (Eevee) - expect ~{Math.round(expectedSec)}s on a cold server
-                    </p>
                 </div>
             )}
 
@@ -194,7 +185,7 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
                     </div>
                 ) : (
                     <p className="text-xs text-[var(--color-text-faint)] py-2">
-                        Pick an object and click Render. Takes a few seconds; first render after a restart is slower.
+                        Pick an object and click Render.
                     </p>
                 )}
             </div>
