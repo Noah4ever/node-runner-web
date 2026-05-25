@@ -41,15 +41,17 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
     const [imageUrl, setImageUrl] = useState<string | null>(null)
     const [shape, setShape] = useState<Shape>('sphere')
     const [progress, setProgress] = useState(0) // 0..1
+    const [elapsedMs, setElapsedMs] = useState(0)
     const queryClient = useQueryClient()
     const { data: quota } = useRenderQuota()
     const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
     const quotaExhausted = quota && !quota.unlimited && quota.used >= quota.limit
 
-    // Drive the fake progress bar at request time. We assume an expected
-    // duration and tween toward 0.95 logarithmically so the bar slows down
-    // near the end - feels more honest than a linear race.
+    // Drive the fake progress bar AND the elapsed-time counter. The bar
+    // tweens to 0.95 over EXPECTED_FRESH_MS; the elapsed timer ticks every
+    // 100ms so the user sees something accurate even when our estimate is
+    // off (which it often will be).
     useEffect(() => {
         if (!busy) {
             if (progressTimer.current) clearInterval(progressTimer.current)
@@ -58,13 +60,14 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
         }
         const start = performance.now()
         const expected = EXPECTED_FRESH_MS
+        setElapsedMs(0)
         progressTimer.current = setInterval(() => {
             const elapsed = performance.now() - start
-            // Eases toward 0.95; never reaches there exactly.
+            setElapsedMs(elapsed)
             const t = elapsed / expected
             const p = 1 - Math.exp(-t * 1.5)
             setProgress(Math.min(0.95, p * 0.95))
-        }, 80)
+        }, 100)
         return () => {
             if (progressTimer.current) clearInterval(progressTimer.current)
             progressTimer.current = null
@@ -128,7 +131,10 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
     return (
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
-                <h3 className="text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">High-quality render</h3>
+                <div className="flex items-center gap-1.5">
+                    <h3 className="text-xs font-semibold text-[var(--color-text-faint)] uppercase tracking-wide">High-quality render</h3>
+                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-400 uppercase tracking-wider">Beta</span>
+                </div>
                 <select
                     value={shape}
                     onChange={(e) => setShape(e.target.value as Shape)}
@@ -152,9 +158,14 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
                 {busy ? 'Rendering…' : imageUrl ? 'Re-render' : 'Render'}
             </button>
 
-            {/* Progress bar - estimated since blender's stdout isn't parsed. */}
+            {/* Progress bar + elapsed timer. Bar is estimated (no progress
+                channel from blender) but the timer is real. */}
             {busy && (
                 <div className="mt-2">
+                    <div className="flex items-center justify-between text-[10px] text-[var(--color-text-faint)] mb-1">
+                        <span>Rendering…</span>
+                        <span className="font-mono tabular-nums">{(elapsedMs / 1000).toFixed(1)}s</span>
+                    </div>
                     <div className="h-1.5 w-full rounded-full bg-[var(--color-bg)] overflow-hidden">
                         <div
                             className="h-full bg-[var(--color-accent)] transition-[width] duration-100 ease-linear"
@@ -180,7 +191,7 @@ export function HQRender({ content, format, slug }: HQRenderProps) {
                     <div className="flex items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-bg)] aspect-square">
                         <div className="flex flex-col items-center gap-3 text-[var(--color-text-muted)]">
                             <SpinnerArc />
-                            <span className="text-xs">Rendering…</span>
+                            <span className="text-xs font-mono tabular-nums">{(elapsedMs / 1000).toFixed(1)}s</span>
                         </div>
                     </div>
                 ) : (

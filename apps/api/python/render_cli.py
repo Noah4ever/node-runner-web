@@ -142,9 +142,11 @@ def setup_scene(kind: str = "shader", shape: str = "sphere") -> str:
         lo.location = loc
         scene.collection.objects.link(lo)
 
-    # World - a soft gradient sky that gives transmissive materials something
-    # to refract through, and adds ambient bounce light for opaque ones. Built
-    # via a Sky Texture (Eevee supports it) with a fallback to a flat grey.
+    # World - a cheap top-to-bottom gradient driven by Z of the generated
+    # texture coordinate. Way faster than a Nishita sky, still gives
+    # transmissive materials something to refract through and provides a
+    # bit of ambient bounce. The Nishita sky was costing ~5-10s of render
+    # time on a software-rendered 4-core CPU.
     if scene.world is None:
         scene.world = bpy.data.worlds.new("PreviewWorld")
     world = scene.world
@@ -155,44 +157,38 @@ def setup_scene(kind: str = "shader", shape: str = "sphere") -> str:
     try:
         out = wnt.nodes.new("ShaderNodeOutputWorld")
         bg = wnt.nodes.new("ShaderNodeBackground")
-        sky = wnt.nodes.new("ShaderNodeTexSky")
-        # Use the cheaper Nishita preset with a low sun so it's not blown out.
-        try:
-            sky.sky_type = "NISHITA"
-            sky.sun_elevation = 0.6
-            sky.sun_rotation = 2.0
-            sky.air_density = 1.0
-            sky.dust_density = 1.5
-            sky.ozone_density = 1.0
-        except Exception:
-            pass
-        bg.inputs["Strength"].default_value = 0.6
-        wnt.links.new(sky.outputs[0], bg.inputs[0])
+        tc = wnt.nodes.new("ShaderNodeTexCoord")
+        sep = wnt.nodes.new("ShaderNodeSeparateXYZ")
+        ramp = wnt.nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.elements[0].position = 0.35
+        ramp.color_ramp.elements[0].color = (0.10, 0.12, 0.16, 1.0)  # darker near horizon
+        ramp.color_ramp.elements[1].position = 0.85
+        ramp.color_ramp.elements[1].color = (0.55, 0.65, 0.80, 1.0)  # sky-ish top
+        wnt.links.new(tc.outputs["Generated"], sep.inputs[0])
+        wnt.links.new(sep.outputs["Z"], ramp.inputs["Fac"])
+        wnt.links.new(ramp.outputs["Color"], bg.inputs[0])
         wnt.links.new(bg.outputs[0], out.inputs[0])
+        bg.inputs["Strength"].default_value = 0.7
     except Exception:
-        # Fallback: a single dim background colour
         out = wnt.nodes.new("ShaderNodeOutputWorld")
         bg = wnt.nodes.new("ShaderNodeBackground")
-        bg.inputs[0].default_value = (0.15, 0.18, 0.22, 1.0)
-        bg.inputs["Strength"].default_value = 0.5
+        bg.inputs[0].default_value = (0.18, 0.22, 0.28, 1.0)
+        bg.inputs["Strength"].default_value = 0.6
         wnt.links.new(bg.outputs[0], out.inputs[0])
 
-    # Render settings: Eevee for speed, modest samples. We keep the world
-    # background OPAQUE (film_transparent=False) so transmissive shaders
-    # actually have something to refract through; without that the sphere
-    # ends up nearly black on a transparent backplate.
-    scene.render.resolution_x = 512
-    scene.render.resolution_y = 512
+    # Render settings tuned for a software-rendered 4-core CPU. 384 px ≈ 56%
+    # of the pixels at 512; combined with 4 TAA samples the typical render
+    # drops from ~30-120s to ~10-40s with little visible quality loss.
+    scene.render.resolution_x = 384
+    scene.render.resolution_y = 384
     scene.render.resolution_percentage = 100
     scene.render.film_transparent = False
     try:
         scene.render.engine = "BLENDER_EEVEE_NEXT"  # Blender 4.x
     except Exception:
         scene.render.engine = "BLENDER_EEVEE"       # Blender 3.x
-    # Fewer samples = faster software-rendered Eevee on headless servers.
-    # 8 is still plenty for a small 512x512 preview.
     try:
-        scene.eevee.taa_render_samples = 8
+        scene.eevee.taa_render_samples = 4
     except Exception:
         pass
     # Raytracing / SSR are OPT-IN per render now. setup_scene leaves them off
@@ -460,6 +456,7 @@ def build_material(tree: dict) -> "bpy.types.Material":
         # serialized entry carries a name (Blender 4.x style {name, value}),
         # so version mismatches don't shift values across the wrong sockets.
         # Fall back to positional only for raw scalar/array entries.
+        is_proc_tex = node_type in ("ShaderNodeTexNoise", "ShaderNodeTexVoronoi", "ShaderNodeTexMusgrave", "ShaderNodeTexWave")
         for i, entry in enumerate(data.get("inputs", []) or []):
             if isinstance(entry, dict) and "value" in entry:
                 value = entry.get("value")
@@ -469,6 +466,11 @@ def build_material(tree: dict) -> "bpy.types.Material":
                 sock_name = None
             if value is None:
                 continue
+            # Detail clamp: noise/voronoi/etc Detail above ~6 has diminishing
+            # visual returns but blows up render time exponentially on a
+            # software-rendered CPU. Cap it.
+            if is_proc_tex and sock_name == "Detail" and isinstance(value, (int, float)) and value > 6:
+                value = 6
             sock = None
             if sock_name:
                 sock = n.inputs.get(sock_name)

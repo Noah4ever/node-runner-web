@@ -286,7 +286,10 @@ export function ViewerPage() {
             {/* Compact header: title + actions on one line. */}
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2 shrink-0">
                 <div className="flex items-baseline gap-3">
-                    <h1 className="text-xl font-bold">Editor</h1>
+                    <div className="flex items-center gap-1.5">
+                        <h1 className="text-xl font-bold">Editor</h1>
+                        <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-400 uppercase tracking-wider">Beta</span>
+                    </div>
                     {hasInput && format && (
                         <span className="text-xs text-[var(--color-text-faint)] hidden sm:inline">
                             {FORMAT_LABELS[format]} &middot; {nodeCount} nodes &middot; {linkCount} links
